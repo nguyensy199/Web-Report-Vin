@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ Thống Quản Lý Team Data Annotation</title>
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Include Stylesheet -->
+  <?!= include('css'); ?>
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Đang tải dữ liệu...</div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- App Main Layout -->
+  <div class="app-layout">
+    
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-icon">🎯</div>
+        <div class="logo-text">
+          <h2>VIN-ANNOTATE</h2>
+          <p>Quản Lý Team Annotation</p>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <div class="nav-section-label">TỔNG QUAN</div>
+        <a class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+          Dashboard Tuần
+        </a>
+        <a class="nav-item" id="nav-rankings" onclick="switchTab('rankings')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+          Bảng Xếp Hạng
+        </a>
+
+        <div class="nav-section-label">VẬN HÀNH HÀNG NGÀY</div>
+        <a class="nav-item" id="nav-input" onclick="switchTab('input')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+          Nhập Số Liệu
+        </a>
+        <a class="nav-item" id="nav-attendance" onclick="switchTab('attendance')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+          Điểm Danh Đội Ngũ
+        </a>
+        <a class="nav-item" id="nav-attitude" onclick="switchTab('attitude')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path></svg>
+          Đánh Giá Năng Lực (OJT)
+        </a>
+        <a class="nav-item" id="nav-errors" onclick="switchTab('errors')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+          Ghi Nhận Lỗi & Khiếu Nại
+        </a>
+
+        <div class="nav-section-label">BÁO CÁO & PHÂN TÍCH</div>
+        <a class="nav-item" id="nav-reports" onclick="switchTab('reports')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          Báo Cáo Tuần / Ngày
+        </a>
+
+        <div class="nav-section-label admin-only">HỆ THỐNG</div>
+        <a class="nav-item admin-only" id="nav-roles" onclick="switchTab('roles')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+          Phân Quyền Vai Trò
+        </a>
+        <a class="nav-item admin-only" id="nav-settings" onclick="switchTab('settings')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          Quản Trị Admin
+        </a>
+      </nav>
+
+      <!-- User Profile Badge -->
+      <div class="user-profile-badge">
+        <div class="user-avatar" id="currentUserAvatar">A</div>
+        <div class="user-details">
+          <div class="user-name" id="currentUserName">Admin User</div>
+          <span class="user-role-badge" id="currentUserRole">ADMIN</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="page-title">
+          <span>🚀</span> Bảng Điều Khiển Quản Lý Dự Án Data Annotation
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary btn-sm" onclick="location.reload()">
+            🔄 Làm mới
+          </button>
+        </div>
+      </header>
+
+      <div class="page-container">
+        
+        <!-- ================================================================ -->
+        <!-- TAB 1: DASHBOARD TUẦN ĐỘC LẬP                                    -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-dashboard">
+          
+          <!-- Filter Bar: Chọn tuần độc lập & Nút Tạo Tuần Mới -->
+          <div class="filter-bar">
+            <div class="filter-group">
+              <span class="filter-label">📅 Chọn Tuần:</span>
+              <select class="form-select" id="dashboardWeekSelect" onchange="loadDashboardData()" style="min-width: 240px; font-weight: 600;">
+                <!-- Tự động nạp danh sách tuần -->
+              </select>
+            </div>
+
+            <button class="btn btn-primary btn-sm" onclick="loadDashboardData()">
+              🔍 Lọc dữ liệu
+            </button>
+
+            <!-- Nút Tự Tạo Trang Dashboard Mới Theo Tuần -->
+            <button class="btn btn-success btn-sm" onclick="openCreateWeekModal()" style="margin-left: auto;">
+              ➕ Tạo Dashboard Tuần Mới
+            </button>
+          </div>
+
+          <!-- 3 Thẻ KPI Tổng Hợp Sản Lượng & Target -->
+          <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 24px;">
+            
+            <div class="kpi-card">
+              <div class="kpi-title">
+                <span>Tổng Sản Lượng (Cuboid)</span>
+                <span>📦</span>
+              </div>
+              <div class="kpi-value" id="kpiOutputValue">0</div>
+              <div id="kpiOutputSubTarget" style="font-size:12.5px; color:var(--text-secondary); margin:4px 0 6px 0; font-weight:600;">
+                <!-- Hiển thị KPI và Target rõ ràng -->
+              </div>
+              <div class="kpi-trend" id="kpiOutputTrend">--</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-title">
+                <span>% Đạt Chỉ Tiêu Target</span>
+                <span>🎯</span>
+              </div>
+              <div class="kpi-value" id="kpiTargetRateValue">0%</div>
+              <div class="kpi-trend" id="kpiTargetRateTrend">--</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-title">
+                <span>Số Người Đạt / Chưa Đạt Target</span>
+                <span>👥</span>
+              </div>
+              <div class="kpi-value" id="kpiTargetReach">0 / 0</div>
+              <div class="kpi-trend" style="color:var(--text-muted);">Thành viên trong tuần</div>
+            </div>
+
+          </div>
+
+          <!-- Danh Sách Biểu Đồ Sản Lượng Trọng Tâm -->
+          <div style="display:flex; flex-direction:column; gap:24px; margin-bottom:24px;">
+            
+            <!-- Biểu đồ 1A: Cột Đôi KPI CẢ TUẦN (Tổng Tuần) - Thang đo 0 -> 9000 -->
+            <div class="card chart-card">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                <div class="card-title">📊 So Sánh KPI Yêu Cầu vs KPI Thực Tế Làm Được - Tổng Cả Tuần (Từng Thành Viên)</div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:12px; color:var(--text-secondary); font-weight:600;">⚡ Thang đo: 0 - 9.000 Cuboid</span>
+                </div>
+              </div>
+              <div class="chart-wrapper" style="height: 380px;">
+                <canvas id="chartOutputVsTargetWeek"></canvas>
+              </div>
+            </div>
+
+            <!-- BẢNG KPI THEO NGÀY (MẪU CHUẨN MA TRẬN TỪNG THÀNH VIÊN) -->
+            <div class="card" id="cardKpiDailyMatrix">
+              <div class="card-header" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; border-bottom:none; padding-bottom:4px;">
+                <div>
+                  <div class="card-title" style="display:flex; align-items:center; gap:10px; font-size:18px; font-weight:800;">
+                    <span style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:6px; background:rgba(59,130,246,0.15); color:var(--primary); font-size:14px; font-weight:800;">02</span>
+                    <span>Bảng KPI theo ngày</span>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-muted); margin-top:6px; line-height:1.5;">
+                    Ô = sản lượng hoàn thành. % KPI = TB ÷ Target ngày. Dữ liệu thực tế theo tuần đang chọn.
+                  </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="badge" style="background:rgba(59,130,246,0.12); color:#60a5fa; font-weight:600; font-size:12px; padding:6px 12px; border-radius:8px;">
+                    📅 Tự động đồng bộ theo tuần
+                  </span>
+                </div>
+              </div>
+
+              <div class="table-responsive" style="margin-top:10px; overflow-x:auto;">
+                <table class="data-table kpi-matrix-table" id="kpiDailyMatrixTable">
+                  <thead id="kpiDailyMatrixThead">
+                    <tr>
+                      <th style="text-align:left; padding-left:18px;">Annotator</th>
+                      <th style="text-align:center;">TB / ngày</th>
+                      <th style="text-align:center;">% KPI</th>
+                      <th style="text-align:center;">Xếp loại</th>
+                    </tr>
+                  </thead>
+                  <tbody id="kpiDailyMatrixTbody">
+                    <tr>
+                      <td colspan="10" style="text-align:center; padding:32px; color:var(--text-muted);">
+                        Đang nạp dữ liệu bảng KPI theo ngày...
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Chú Thích Mẫu (Legend) -->
+              <div class="kpi-matrix-legend" style="display:flex; align-items:center; flex-wrap:wrap; gap:18px; margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="kpi-legend-chip kpi-chip-excellent"></span>
+                  <span style="color:var(--text-secondary);">Xuất sắc ≥ Target (≥ 100%)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="kpi-legend-chip kpi-chip-normal"></span>
+                  <span style="color:var(--text-secondary);">Bình thường (80% – 99%)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="kpi-legend-chip kpi-chip-warning"></span>
+                  <span style="color:var(--text-secondary);">Dưới KPI (&lt; 80%)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="kpi-legend-chip kpi-chip-done"></span>
+                  <span style="color:var(--text-secondary);">Done job</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="kpi-legend-chip kpi-chip-off"></span>
+                  <span style="color:var(--text-secondary);">Nghỉ</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Biểu đồ 2: Xu hướng sản lượng từng thành viên theo ngày -->
+            <div class="card chart-card">
+              <div class="card-header">
+                <div class="card-title">👥 Xu Hướng Sản Lượng Từng Thành Viên Theo Ngày</div>
+              </div>
+              <div class="chart-wrapper" style="height: 360px;">
+                <canvas id="chartMemberTrends"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Bảng Lỗi Gần Nhất Trong Kỳ -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🚨 Danh Sách Lỗi Ghi Nhận Trong Kỳ</div>
+              <button class="btn btn-secondary btn-sm" onclick="switchTab('errors')">Xem tất cả lỗi →</button>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Thành viên</th>
+                    <th>Mã Task / Mã Job</th>
+                    <th>Trạng thái</th>
+                    <th>Chi tiết</th>
+                  </tr>
+                </thead>
+                <tbody id="dashRecentErrorsBody">
+                  <tr><td colspan="5" style="text-align:center;padding:20px;">Đang tải dữ liệu...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 2: NHẬP SỐ LIỆU HẰNG NGÀY                                   -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-input" style="display:none;">
+          <div class="card" style="max-width: 750px; margin: 0 auto;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div class="card-title">📝 Nhập Số Liệu Nhật Ký Hằng Ngày</div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="openDailyLogHistoryModal()" title="Xem toàn bộ lịch sử các bản ghi đã nhập và xóa bản ghi nếu nhập nhầm" style="display:inline-flex; align-items:center; gap:6px; font-weight:700; border-color:rgba(56,189,248,0.4); color:#38bdf8; background:rgba(56,189,248,0.08); padding:6px 12px; cursor:pointer;">
+                <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                📜 Lịch Sử Nhập Số Liệu
+              </button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                <div>
+                  <label class="filter-label">Thành viên *</label>
+                  <select class="form-select" id="inputMemberSelect" style="width:100%;margin-top:6px;font-weight:600;">
+                    <option value="">-- Đang tải danh sách thành viên... --</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="filter-label">Ngày thực hiện *</label>
+                  <input type="date" class="form-input" id="inputDate" style="width:100%;margin-top:6px;" value="2026-10-25">
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                <div>
+                  <label class="filter-label">Định mức Target ngày</label>
+                  <input type="number" class="form-input" id="inputTarget" style="width:100%;margin-top:6px;" value="120">
+                </div>
+                <div>
+                  <label class="filter-label">Sản lượng hoàn thành *</label>
+                  <input type="number" class="form-input" id="inputOutput" style="width:100%;margin-top:6px;" placeholder="Ví dụ: 125">
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                <div>
+                  <label class="filter-label">Số giờ làm việc</label>
+                  <input type="number" step="0.5" class="form-input" id="inputHours" style="width:100%;margin-top:6px;" value="8">
+                </div>
+                <div>
+                  <label class="filter-label">Số lượng Rework/Lỗi</label>
+                  <input type="number" class="form-input" id="inputRework" style="width:100%;margin-top:6px;" value="0">
+                </div>
+              </div>
+
+              <div>
+                <label class="filter-label">Ghi chú (Tùy chọn)</label>
+                <textarea class="form-textarea" id="inputNote" rows="3" style="width:100%;margin-top:6px;" placeholder="Ghi chú về task khó hoặc lưu ý tiến độ..."></textarea>
+              </div>
+
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:8px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openDailyLogHistoryModal()" style="display:inline-flex; align-items:center; gap:6px;">
+                  🕒 Xem Lịch Sử Đã Nhập (Có Thể Xóa)
+                </button>
+                <button class="btn btn-primary" onclick="submitSingleDailyLog()">
+                  💾 Lưu Nhật Ký
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 3: GHI NHẬN LỖI (DÀNH CHO QC & TEAM)                       -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-errors" style="display:none;">
+          
+          <!-- Form Ghi lỗi nhanh (QC/Admin) -->
+          <div class="card admin-only">
+            <div class="card-header">
+              <div class="card-title">⚠️ Ghi Nhận Lỗi Nhanh (QC / Quản Trị)</div>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+              <div>
+                <label class="filter-label">Thành viên vi phạm lỗi *</label>
+                <select class="form-select" id="errorMemberSelect" style="width:100%;margin-top:4px;font-weight:600;">
+                  <option value="">-- Đang tải danh sách thành viên... --</option>
+                </select>
+              </div>
+              <div>
+                <label class="filter-label">Người ghi (QC) *</label>
+                <select class="form-select" id="errorQcSelect" style="width:100%;margin-top:4px;font-weight:600;border-color:#38bdf8;">
+                  <option value="">-- Chọn Người ghi (QC) --</option>
+                </select>
+              </div>
+              <div>
+                <label class="filter-label">Mã Task / Mã Job *</label>
+                <input type="text" class="form-input" id="errorTaskId" style="width:100%;margin-top:4px;" placeholder="Ví dụ: Task #1289, Job #1200,...">
+              </div>
+              <div>
+                <label class="filter-label">Ngày ghi nhận</label>
+                <input type="date" class="form-input" id="errorDate" style="width:100%;margin-top:4px;" value="2026-10-25">
+              </div>
+            </div>
+
+            <div style="margin-top:14px;">
+              <label class="filter-label">Mô tả chi tiết lỗi (Không giới hạn số từ, gõ chi tiết để kiểm tra) *</label>
+              <textarea class="form-textarea" id="errorDesc" rows="4" style="width:100%;margin-top:4px;" placeholder="Ghi chi tiết vị trí lỗi, cách khắc phục, quy tắc vi phạm (không giới hạn độ dài văn bản)..."></textarea>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+              <button class="btn btn-danger" onclick="submitNewErrorLog()">
+                🚨 Ghi Nhận Lỗi Này
+              </button>
+            </div>
+          </div>
+
+          <!-- Bộ Lọc Danh Sách Lỗi (Dropdown chọn thành viên & Người ghi) -->
+          <div class="filter-bar">
+            <div class="filter-group">
+              <span class="filter-label">Từ ngày:</span>
+              <input type="date" class="form-input" id="errFilterFrom">
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Đến ngày:</span>
+              <input type="date" class="form-input" id="errFilterTo">
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Thành viên vi phạm:</span>
+              <select class="form-select" id="errFilterMember" onchange="loadErrorLogsTable()" style="min-width:180px;font-weight:600;">
+                <option value="">-- Tất cả thành viên --</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Người ghi (QC):</span>
+              <select class="form-select" id="errFilterQC" onchange="loadErrorLogsTable()" style="min-width:180px;font-weight:600;">
+                <option value="">-- Tất cả người ghi --</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Trạng thái:</span>
+              <select class="form-select" id="errFilterStatus" onchange="loadErrorLogsTable()">
+                <option value="">-- Tất cả trạng thái --</option>
+                <option value="Đang chờ">Đang chờ</option>
+                <option value="Đã sửa">Đã sửa</option>
+              </select>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="loadErrorLogsTable()">
+              🔍 Lọc Lỗi
+            </button>
+          </div>
+
+          <!-- Bảng Danh Sách Lỗi -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">📋 Toàn Bộ Danh Sách Lỗi Đã Ghi Nhận</div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Ngày</th>
+                    <th>Thành viên</th>
+                    <th>Mã Task / Mã Job</th>
+                    <th>Trạng thái</th>
+                    <th>Người ghi (QC)</th>
+                    <th style="min-width: 260px;">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="errorLogsTableBody">
+                  <tr><td colspan="6" style="text-align:center;padding:24px;">Đang tải danh sách lỗi...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 4: BẢNG XẾP HẠNG & HUY HIỆU                                -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-rankings" style="display:none;">
+          
+          <div class="filter-bar">
+            <div class="filter-group">
+              <span class="filter-label">📅 Chọn Tuần Xếp Hạng:</span>
+              <select class="form-select" id="rankWeekSelect" onchange="loadRankingsData()" style="min-width: 250px; font-weight: 600;">
+                <!-- Tự động nạp danh sách tuần giống như Dashboard -->
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <span class="filter-label">Tiêu chí xếp hạng:</span>
+              <select class="form-select" id="rankCriterionSelect" onchange="loadRankingsData()">
+                <option value="COMPOSITE">⚡ Hiệu Suất Tổng Thể</option>
+                <option value="OUTPUT">📦 Sản Lượng (Cuboid)</option>
+                <option value="QUALITY">🎯 Chất Lượng (Accuracy)</option>
+              </select>
+            </div>
+
+            <div style="margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <div id="rankDisplayRange" style="font-weight:600;color:var(--text-secondary);font-size:13px;margin-right:6px;"></div>
+              <button class="btn btn-warning btn-sm" id="btnSaveAdminRank" onclick="saveAdminCustomRankings()" style="display:none;" title="Lưu lại thứ hạng sau khi kéo thả">
+                💾 Lưu Thứ Hạng (Team Lead)
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btnResetAdminRank" onclick="resetAdminCustomRankings()" style="display:none;" title="Khôi phục xếp hạng tự động">
+                🔄 Đặt Lại Tự Động
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div class="card-title" style="display:flex; align-items:center; gap:8px;">
+                <span>🏆 Bảng Xếp Hạng Hiệu Suất & Danh Hiệu Đội Ngũ</span>
+                <span style="font-size:12px;font-weight:normal;color:var(--text-muted);background:rgba(255,255,255,0.06);padding:3px 8px;border-radius:6px;">
+                  ✋ Click & Kéo thả tên người lên/xuống để đổi thứ tự
+                </span>
+              </div>
+              <div id="rankCustomNotice" style="display:none;font-size:12px;color:var(--warning);font-weight:600;background:rgba(245,158,11,0.12);padding:4px 10px;border-radius:6px;">
+                ⚙️ Đang áp dụng thứ hạng tùy chỉnh bởi Team Lead
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:85px;text-align:center;">Hạng</th>
+                    <th style="width:145px;">Biến động (vs Tuần trước)</th>
+                    <th>Họ và tên</th>
+                    <th>Sản Lượng</th>
+                    <th>% Target</th>
+                    <th>Accuracy</th>
+                    <th>Năng Suất/h</th>
+                    <th>Huy Hiệu & Danh Hiệu</th>
+                  </tr>
+                </thead>
+                <tbody id="rankingsTableBody">
+                  <tr><td colspan="8" style="text-align:center;padding:24px;">Đang tính toán bảng xếp hạng...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 5: BÁO CÁO TUẦN ĐỘC LẬP & TỰ ĐỘNG                           -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-reports" style="display:none;">
+          
+          <div class="filter-bar no-print" style="flex-wrap: wrap; gap: 12px; align-items: center;">
+            <!-- Bộ chuyển đổi Báo Cáo Tuần / Ngày -->
+            <div style="display:inline-flex; border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,0.15);">
+              <button type="button" class="btn btn-sm" id="btnReportModeWeek" onclick="switchReportPeriodMode('WEEK')" style="border-radius:0; padding:7px 15px; font-weight:700; background:var(--primary); color:#fff; transition:all 0.2s;">📅 Báo Cáo Tuần</button>
+              <button type="button" class="btn btn-sm" id="btnReportModeDay" onclick="switchReportPeriodMode('DAY')" style="border-radius:0; padding:7px 15px; font-weight:700; background:rgba(255,255,255,0.05); color:var(--text-secondary); transition:all 0.2s;">📆 Báo Cáo Ngày</button>
+            </div>
+
+            <!-- Group chọn Tuần -->
+            <div class="filter-group" id="reportWeekGroup" style="display:flex; align-items:center; gap:8px;">
+              <span class="filter-label" style="margin:0;">📅 Chọn Tuần:</span>
+              <select class="form-select" id="reportWeekSelect" onchange="loadReportData()" style="min-width: 240px; font-weight: 600;">
+                <!-- Danh sách tuần độc lập -->
+              </select>
+            </div>
+
+            <!-- Group chọn Ngày -->
+            <div class="filter-group" id="reportDateGroup" style="display:none; align-items:center; gap:8px;">
+              <span class="filter-label" style="margin:0;">📆 Chọn Ngày:</span>
+              <input type="date" class="form-input" id="reportDateSelect" onchange="loadReportData()" style="padding:6px 12px; font-weight:600; min-width:160px;">
+            </div>
+
+            <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" onclick="copyReportText()">📋 Sao chép text</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ In / PDF A4</button>
+              <button class="btn btn-success btn-sm" onclick="exportReportToSheet()">📗 Xuất Google Sheet</button>
+              <button class="btn btn-primary btn-sm" onclick="saveReportToHistory()">💾 Lưu lịch sử</button>
+            </div>
+          </div>
+
+          <!-- Bảng Nội Dung Báo Cáo Tuần / Ngày -->
+          <div class="card">
+            <div style="text-align:center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border-color);">
+              <h2 id="reportWeekTitle" style="font-size:20px;font-weight:800;color:#fff;margin-bottom:6px;">Báo Cáo</h2>
+              <p style="color:var(--text-secondary);font-size:13px;" id="reportSubtitle">Hệ thống quản lý dữ liệu gán nhãn tự động</p>
+            </div>
+
+            <!-- Tổng quan 4 chỉ số -->
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-bottom:24px;">
+              <div style="background:var(--bg-elevated);padding:14px;border-radius:8px;text-align:center;">
+                <div style="color:var(--text-secondary);font-size:12px;">TỔNG SẢN LƯỢNG (CUBOID)</div>
+                <div style="font-size:22px;font-weight:800;color:var(--primary);margin-top:4px;" id="rptTotalOutput">0</div>
+              </div>
+              <div style="background:var(--bg-elevated);padding:14px;border-radius:8px;text-align:center;">
+                <div style="color:var(--text-secondary);font-size:12px;">% HOÀN THÀNH TARGET</div>
+                <div style="font-size:22px;font-weight:800;color:var(--success);margin-top:4px;" id="rptTargetRate">0%</div>
+              </div>
+              <div style="background:var(--bg-elevated);padding:14px;border-radius:8px;text-align:center;">
+                <div style="color:var(--text-secondary);font-size:12px;">ĐỘ CHÍNH XÁC TB</div>
+                <div style="font-size:22px;font-weight:800;color:#fff;margin-top:4px;" id="rptAccuracy">0%</div>
+              </div>
+              <div style="background:var(--bg-elevated);padding:14px;border-radius:8px;text-align:center;">
+                <div style="color:var(--text-secondary);font-size:12px;">TỔNG REWORK</div>
+                <div style="font-size:22px;font-weight:800;color:var(--danger);margin-top:4px;" id="rptTotalErrors">0</div>
+              </div>
+            </div>
+
+            <!-- Bảng Báo Cáo Chi Tiết Từng Thành Viên -->
+            <div style="margin-bottom:28px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                <h3 style="font-size:15px;font-weight:700;color:#fff;margin:0;" id="rptMembersTableTitle">👥 Báo Cáo Chi Tiết Từng Thành Viên</h3>
+                <span style="font-size:12px;color:var(--text-muted);">Sản lượng tính theo <strong>Cuboid</strong> · Click vào ô <strong>Rework</strong> để sửa trực tiếp</span>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th style="width:50px;text-align:center;">Hạng</th>
+                      <th>Họ và tên</th>
+                      <th>Vai trò</th>
+                      <th style="text-align:center; min-width:110px;">Chuyên cần</th>
+                      <th style="text-align:right;">Sản lượng (Cuboid)</th>
+                      <th style="text-align:right;">Chỉ tiêu (Target)</th>
+                      <th style="text-align:center;">% Target</th>
+                      <th style="text-align:center;">Độ chính xác</th>
+                      <th style="text-align:center;">Giờ làm</th>
+                      <th style="text-align:center;">Năng suất/h</th>
+                      <th style="text-align:center; min-width:90px;" title="Click vào ô để sửa số lần Rework">Rework ✏️</th>
+                      <th style="text-align:center;">Đánh giá</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rptMembersDetailBody">
+                    <tr><td colspan="12" style="text-align:center;padding:24px;">Đang tải danh sách thành viên...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Bảng Phân Tích Nguyên Nhân Rework / Lỗi Hàng Đầu (Pareto 80/20) -->
+            <div style="margin-bottom:28px;" id="rptRootCauseSection">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                <div>
+                  <h3 style="font-size:15px;font-weight:700;color:#fff;margin:0;">🎯 Phân Tích Nguyên Nhân Rework / Lỗi Hàng Đầu (Pareto 80/20)</h3>
+                  <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Tập trung khắc phục 20% nhóm nguyên nhân gây ra 80% lỗi phát sinh</div>
+                </div>
+                <span class="badge" style="background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;padding:4px 10px;">Quy Luật Pareto 80/20</span>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th style="width:55px;text-align:center;">Top</th>
+                      <th style="min-width:170px;">Loại Lỗi / Category</th>
+                      <th style="width:110px;text-align:center;">Số ca lỗi</th>
+                      <th style="width:170px;">Tỷ lệ Pareto (%)</th>
+                      <th style="width:95px;text-align:center;">Mức độ</th>
+                      <th style="min-width:160px;">Thành viên hay gặp</th>
+                      <th>Giải pháp & Hướng dẫn Guideline</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rptTopErrorsBody">
+                    <tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted);">Đang phân tích dữ liệu lỗi...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Xu hướng 7 ngày trong tuần (Chỉ hiện khi ở chế độ Tuần) -->
+            <div style="margin-bottom:24px;" id="rptDayTrendSection">
+              <h3 style="font-size:14px;font-weight:700;color:#fff;margin-bottom:12px;">📅 Tiến Độ 7 Ngày Trong Tuần (Thứ 2 → Chủ Nhật)</h3>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th>
+                      <th>Sản lượng thực tế (Cuboid)</th>
+                      <th>Chỉ tiêu Target (Cuboid)</th>
+                      <th>Accuracy (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rptDayTrendBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Đề xuất hành động thông minh -->
+            <div style="margin-bottom:24px;">
+              <h3 style="font-size:14px;font-weight:700;color:#fff;margin-bottom:12px;">💡 Đề Xuất Hành Động Tự Động (AI / Rule-based Recommendations)</h3>
+              <div id="rptRecommendations"></div>
+            </div>
+
+            <!-- Ghi chú điều hành (Editable) -->
+            <div class="no-print" style="margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+              <div>
+                <label class="filter-label" id="rptManagerNoteLabel">Nhận xét chung của Quản lý / Team Lead:</label>
+                <textarea class="form-textarea" id="rptManagerNote" rows="3" style="width:100%;margin-top:6px;" placeholder="Đánh giá tinh thần làm việc, lưu ý chất lượng..."></textarea>
+              </div>
+              <div>
+                <label class="filter-label" id="rptNextPlanLabel">Mục tiêu & Kế hoạch tiếp theo:</label>
+                <textarea class="form-textarea" id="rptNextWeekPlan" rows="3" style="width:100%;margin-top:6px;" placeholder="Chỉ tiêu target tiếp theo, danh sách task ưu tiên..."></textarea>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 6: CÀI ĐẶT ADMIN                                            -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-settings" style="display:none;">
+          
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">👥 Quản Lý Danh Sách Thành Viên (9 Annotators + QA + Admin)</div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Họ và tên</th>
+                    <th>Email</th>
+                    <th>Vai trò</th>
+                    <th>Target ngày</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="adminMembersTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">⚙️ Khởi Tạo Dữ Liệu Mẫu Chuẩn (9 Thành Viên × 14 Ngày)</div>
+            </div>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+              Nút này sẽ tạo lại cơ sở dữ liệu hoàn chỉnh với 9 Annotators (người xuất sắc, người yếu, người tiến bộ vượt bậc, người có lỗi critical...) qua 2 tuần (tuần trước và tuần này) để Dashboard và Báo cáo có đầy đủ biểu đồ so sánh ngay lập tức.
+            </p>
+            <button class="btn btn-danger" onclick="resetSampleDatabase()">
+              🔄 Tạo Lại Cơ Sở Dữ Liệu Mẫu
+            </button>
+          </div>
+
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 6: ĐIỂM DANH HẰNG NGÀY & TÁC PHONG                          -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-attendance" style="display:none;">
+          
+          <!-- Thanh điều khiển Điểm Danh -->
+          <div class="filter-bar">
+            <div class="filter-group">
+              <span class="filter-label">📅 Ngày điểm danh:</span>
+              <input type="date" class="form-input" id="attendanceDateInput" onchange="loadAttendanceTable()">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="loadAttendanceTable()">
+              🔍 Tải Ngày Này
+            </button>
+
+            <div style="margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" onclick="quickMarkAllAttendance()" title="Tự động đặt tất cả là Có mặt và Tác phong Đạt">
+                ⚡ Tất Cả Có Mặt & Đạt
+              </button>
+              <button class="btn btn-success btn-sm" onclick="saveDailyAttendanceData()">
+                💾 Lưu Bảng Điểm Danh
+              </button>
+            </div>
+          </div>
+
+          <!-- Thống kê nhanh điểm danh trong ngày -->
+          <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 20px;">
+            <div class="kpi-card">
+              <div class="kpi-title"><span>Có Mặt</span><span>✅</span></div>
+              <div class="kpi-value" id="attStatPresent" style="color:var(--success);">0 / 10</div>
+              <div class="kpi-trend">Thành viên đi làm</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title"><span>Nghỉ Phép / Nửa Ngày</span><span>🏖️</span></div>
+              <div class="kpi-value" id="attStatLeave" style="color:var(--warning);">0</div>
+              <div class="kpi-trend">Có phép / Nửa ngày</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title"><span>Vắng / Không Phép</span><span>❌</span></div>
+              <div class="kpi-value" id="attStatAbsent" style="color:var(--danger);">0</div>
+              <div class="kpi-trend">Vắng mặt</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title"><span>Tác Phong Không Đạt</span><span>⚠️</span></div>
+              <div class="kpi-value" id="attStatDemeanorFail" style="color:var(--danger);">0</div>
+              <div class="kpi-trend">Cần chấn chỉnh</div>
+            </div>
+          </div>
+
+          <!-- Bảng Điểm Danh 10 Thành Viên -->
+          <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <div class="card-title">📋 Bảng Điểm Danh & Đánh Giá Tác Phong (10 Thành Viên)</div>
+              <span id="attSaveStatusBadge" class="badge badge-gold" style="display:none;">Đã lưu</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:50px;text-align:center;">STT</th>
+                    <th>Họ và tên</th>
+                    <th>Vai trò</th>
+                    <th style="width:200px;">Điểm danh</th>
+                    <th style="width:160px;">Tác phong</th>
+                    <th>Ghi chú (Lý do nghỉ / Vi phạm tác phong)</th>
+                  </tr>
+                </thead>
+                <tbody id="attendanceTableBody">
+                  <tr><td colspan="6" style="text-align:center;padding:24px;">Đang tải danh sách điểm danh...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+              <button class="btn btn-success" onclick="saveDailyAttendanceData()">
+                💾 Lưu Bảng Điểm Danh Ngày Này
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 6B: ĐÁNH GIÁ NĂNG LỰC TTS / OJT (ATTITUDE · SKILL · OUTPUT)   -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-attitude" style="display:none;">
+          
+          <!-- Thanh điều khiển tuần & Thao tác -->
+          <div class="filter-bar">
+            <div class="filter-group">
+              <span class="filter-label">📅 Chọn Tuần Đánh Giá:</span>
+              <select class="form-select" id="attitudeWeekSelect" onchange="loadAttitudeEvaluationData()" style="min-width: 250px; font-weight: 600;">
+                <!-- Tự động nạp danh sách tuần giống như Dashboard & Điểm danh -->
+              </select>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="loadAttitudeEvaluationData()">
+              🔍 Tải Dữ Liệu
+            </button>
+
+            <div style="margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" onclick="toggleReferenceMatrix()" title="Bật / Tắt hiển thị Bảng Thang Điểm Tham Chiếu Chuẩn VinFast">
+                📖 Thang Điểm Tham Chiếu
+              </button>
+              <button class="btn btn-warning btn-sm" id="btnSaveAttitude" onclick="saveAttitudeEvaluationClient()" title="Lưu lại điểm số và nhận xét tùy chỉnh của Team Lead">
+                💾 Lưu Đánh Giá (Team Lead)
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btnResetAttitude" onclick="resetAttitudeEvaluationClient()" title="Khôi phục lại tính điểm tự động từ Bảng Điểm Danh & KPI">
+                🔄 Khôi Phục Tự Động
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="window.print()" title="In hoặc xuất báo cáo">
+                🖨️ In Báo Cáo
+              </button>
+            </div>
+          </div>
+
+          <!-- Bộ tab chuyển đổi 4 Nhóm Năng Lực theo form VinFast -->
+          <div class="eval-tabs-bar">
+            <button class="eval-tab-btn active" id="tabBtnAttitude" onclick="switchEvalCategory('attitude')">
+              <span class="eval-tab-icon">🌟</span>
+              <div class="eval-tab-info">
+                <span class="eval-tab-title">Attitude (20%)</span>
+                <span class="eval-tab-sub">Thái độ · Chủ động · Thích ứng</span>
+              </div>
+            </button>
+            <button class="eval-tab-btn" id="tabBtnSkill" onclick="switchEvalCategory('skill')">
+              <span class="eval-tab-icon">⚡</span>
+              <div class="eval-tab-info">
+                <span class="eval-tab-title">Skill (50%)</span>
+                <span class="eval-tab-sub">Năng lực chuyên môn · Thực hiện</span>
+              </div>
+            </button>
+            <button class="eval-tab-btn" id="tabBtnOutput" onclick="switchEvalCategory('output')">
+              <span class="eval-tab-icon">📦</span>
+              <div class="eval-tab-info">
+                <span class="eval-tab-title">Output (30%)</span>
+                <span class="eval-tab-sub">Chất lượng · Độ tin cậy</span>
+              </div>
+            </button>
+            <button class="eval-tab-btn" id="tabBtnOverall" onclick="switchEvalCategory('overall')">
+              <span class="eval-tab-icon">🏆</span>
+              <div class="eval-tab-info">
+                <span class="eval-tab-title">Tổng Hợp (100%)</span>
+                <span class="eval-tab-sub">Xếp loại chung OJT / TTS</span>
+              </div>
+            </button>
+          </div>
+
+          <!-- Bảng Thang Đánh Giá Tham Chiếu (Nguyên văn mẫu VinFast) -->
+          <div class="ref-matrix-box" id="refMatrixBox" style="display:none;">
+            <div class="ref-matrix-title">
+              <span>📋 THANG ĐÁNH GIÁ THAM CHIẾU (DÙNG KHI CHẤM ĐIỂM 1 - 100)</span>
+              <button class="btn btn-secondary btn-sm" onclick="toggleReferenceMatrix()" style="padding:2px 8px;font-size:11px;">Đóng ✕</button>
+            </div>
+            <div class="table-responsive">
+              <table class="ref-matrix-table">
+                <thead>
+                  <tr>
+                    <th style="width:220px;">Nhóm năng lực</th>
+                    <th style="width:15%;">Dưới 50 (<span style="color:#f87171;">&lt; L1</span>)</th>
+                    <th style="width:16%;">50 - 69 (<span style="color:#fb923c;">L1</span>)</th>
+                    <th style="width:17%;">70 - 79 (<span style="color:#38bdf8;">L2</span>)</th>
+                    <th style="width:17%;">80 - 89 (<span style="color:#60a5fa;">L2</span>)</th>
+                    <th style="width:18%;">90 - 100 (<span style="color:#4ade80;">L3</span>)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="ref-cat-name">
+                      <strong>Attitude</strong><br>
+                      <small style="color:var(--text-muted);">Thái độ, tinh thần chủ động, khả năng thích ứng (20%)</small>
+                    </td>
+                    <td>Thụ động, chờ giao việc, không thích ứng với quy trình.</td>
+                    <td>Thực hiện khi được yêu cầu, đạt câu hỏi cơ bản, cần được nhắc nhở.</td>
+                    <td>Chủ động nhận việc, tự tìm hiểu, thích ứng tốt với quy trình.</td>
+                    <td>Chủ động cao, tự học nhanh, đề xuất cải tiến trong phạm vi công việc.</td>
+                    <td>Chủ động tự xác định vấn đề, đề xuất giải pháp và hỗ trợ, dẫn dắt người khác.</td>
+                  </tr>
+                  <tr>
+                    <td class="ref-cat-name">
+                      <strong>Skill</strong><br>
+                      <small style="color:var(--text-muted);">Năng lực chuyên môn và thực hiện công việc (50%)</small>
+                    </td>
+                    <td>Output không đạt, cần hướng dẫn chi tiết từng bước.</td>
+                    <td>Output đạt cơ bản nhưng cần review nhiều lần.</td>
+                    <td>Output đạt yêu cầu, ít cần sửa, biết tự khắc phục đa số lỗi.</td>
+                    <td>Output chất lượng cao, chủ động xử lý vấn đề phát sinh, ít phụ thuộc hỗ trợ.</td>
+                    <td>Output vượt kỳ vọng, tối ưu và đáng tin cậy, có thể mentor người khác.</td>
+                  </tr>
+                  <tr>
+                    <td class="ref-cat-name">
+                      <strong>Output</strong><br>
+                      <small style="color:var(--text-muted);">Chất lượng kết quả công việc và độ tin cậy (30%)</small>
+                    </td>
+                    <td>Lỗi nhiều, không tự review, trễ deadline.</td>
+                    <td>Đạt cơ bản nhưng thiếu chi tiết, cần nhắc nhở về tiến độ.</td>
+                    <td>Ổn định, đúng hạn, tự review trước khi bàn giao.</td>
+                    <td>Chất lượng ổn định cao, chủ động kiểm thử, ít lỗi khi bàn giao.</td>
+                    <td>Chuẩn chuyên nghiệp, có thể bàn giao dùng ngay, rất đáng tin cậy.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Banner Đánh Giá Năng Lực (Chuẩn VinFast theo ảnh mẫu) -->
+          <div class="attitude-banner">
+            <div class="attitude-banner-header">
+              <div>
+                <div class="attitude-brand-tag">
+                  <span class="attitude-vin-logo">V</span>
+                  <span id="attitudeTeamHeaderTag">VINFAST · TEAM T1 3D LIDAR · TEAM LEAD NGUYỄN TIẾN SỸ</span>
+                </div>
+                <h1 class="attitude-main-title" id="attitudeMainTitle">Đánh giá Attitude thành viên</h1>
+              </div>
+
+              <div class="attitude-banner-stats">
+                <div class="attitude-stat-box">
+                  <div class="attitude-stat-num" id="attitudeTeamAvgStat">--</div>
+                  <div class="attitude-stat-label" id="attitudeAvgStatLabel">TB ĐIỂM TEAM</div>
+                </div>
+                <div class="attitude-stat-box">
+                  <div class="attitude-stat-num" id="attitudeOnTimeRatioStat">--</div>
+                  <div class="attitude-stat-label" id="attitudeRatioStatLabel">ĐẠT CHUẨN L2 - L3</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="attitude-banner-desc" id="attitudeBannerDesc">
+              <strong>Thang điểm 1–100</strong> · <strong>L3 (90–100)</strong> · <strong>L2 (70–89: gồm 70–79 & 80–89)</strong> · <strong>L1 (50–69)</strong> · <strong>Dưới 50 (&lt; L1)</strong>. Căn cứ: đúng giờ, chấp hành quy trình, Complete đúng deadline, chủ động hỗ trợ nhóm (số liệu <span id="attitudeWeekDateDesc">tuần</span>). Mentor: <span id="attitudeMentorName">Vũ Trọng Duyệt</span> · Team Lead: <span id="attitudeTeamLeadName">Nguyễn Tiến Sỹ</span>.
+            </div>
+          </div>
+
+          <!-- Bảng Điểm Xếp Hạng Đánh Giá -->
+          <div class="card" style="padding: 18px 24px;">
+            <div class="table-responsive">
+              <table class="attitude-table">
+                <thead id="attitudeTableHead">
+                  <tr>
+                    <th style="width:50px; text-align:center;">#</th>
+                    <th style="width:230px;">THÀNH VIÊN</th>
+                    <th>TIẾN TRÌNH ĐIỂM SỐ · THANG 1–100</th>
+                    <th style="width:90px; text-align:center;">ĐIỂM</th>
+                    <th style="width:120px; text-align:center;">XẾP LOẠI</th>
+                  </tr>
+                </thead>
+                <tbody id="attitudeTableBody">
+                  <tr><td colspan="5" style="text-align:center;padding:32px;">Đang tải danh sách đánh giá...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Chú thích Legend mốc chuẩn VinFast -->
+            <div class="attitude-legend" id="attitudeLegendBox">
+              <div class="attitude-legend-item">
+                <span class="attitude-legend-square" style="background:#10b981;"></span>
+                <span><strong>L3:</strong> 90–100</span>
+              </div>
+              <div class="attitude-legend-item">
+                <span class="attitude-legend-square" style="background:#2563eb;"></span>
+                <span><strong>L2:</strong> 80–89</span>
+              </div>
+              <div class="attitude-legend-item">
+                <span class="attitude-legend-square" style="background:#0284c7;"></span>
+                <span><strong>L2:</strong> 70–79</span>
+              </div>
+              <div class="attitude-legend-item">
+                <span class="attitude-legend-square" style="background:#ea580c;"></span>
+                <span><strong>L1:</strong> 50–69</span>
+              </div>
+              <div class="attitude-legend-item">
+                <span class="attitude-legend-square" style="background:#dc2626;"></span>
+                <span><strong>&lt; L1:</strong> Dưới 50</span>
+              </div>
+              <div class="attitude-legend-item" style="margin-left: 12px;">
+                <span style="color:#f97316;font-weight:900;">┆</span>
+                <span>Mốc 50 (L1)</span>
+              </div>
+              <div class="attitude-legend-item">
+                <span style="color:#0284c7;font-weight:900;">┆</span>
+                <span>Mốc 70 (L2)</span>
+              </div>
+              <div class="attitude-legend-item">
+                <span style="color:#2563eb;font-weight:900;">┆</span>
+                <span>Mốc 80 (L2)</span>
+              </div>
+              <div class="attitude-legend-item">
+                <span style="color:#10b981;font-weight:900;">┆</span>
+                <span>Mốc 90 (L3)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Khu vực Ghi chú · Lý do xếp loại -->
+          <div style="margin-top: 28px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+              <h2 style="font-size: 19px; font-weight: 800; color: var(--text-main); margin: 0;" id="attitudeReasonsTitle">Ghi chú · Lý do xếp loại</h2>
+              <small style="color:var(--text-muted); font-size:12px;">💡 Team Lead có thể bấm trực tiếp vào nhận xét để chỉnh sửa và bấm "Lưu Đánh Giá"</small>
+            </div>
+
+            <div class="attitude-reasons-grid" id="attitudeReasonsGrid">
+              <!-- Render tự động cards -->
+            </div>
+          </div>
+
+          <!-- Footer của trang -->
+          <div class="attitude-page-footer">
+            <span id="attitudeFooterLeft">Đánh giá Năng lực OJT / TTS · Team T1 3D LIDAR · Tầng 28</span>
+            <span id="attitudeFooterRight">Team lead: Nguyễn Tiến Sỹ</span>
+          </div>
+
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- TAB 7: QUẢN LÝ PHÂN QUYỀN VAI TRÒ (3 ROLES)                     -->
+        <!-- ================================================================ -->
+        <div class="tab-view" id="view-roles" style="display:none;">
+          
+          <!-- Thống kê vai trò -->
+          <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 20px;">
+            <div class="kpi-card">
+              <div class="kpi-title"><span>Team Lead (Quản Trị)</span><span>👑</span></div>
+              <div class="kpi-value" id="roleCountTeamLead" style="color:var(--warning);">0</div>
+              <div class="kpi-trend">Toàn quyền hệ thống & phân quyền</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title"><span>Annotator + QC</span><span>🔍</span></div>
+              <div class="kpi-value" id="roleCountQC" style="color:var(--primary);">0</div>
+              <div class="kpi-trend">Ghi nhận lỗi & Kiểm tra chất lượng</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title"><span>Annotator (Gán Nhãn)</span><span>🏷️</span></div>
+              <div class="kpi-value" id="roleCountAnnotator" style="color:var(--success);">0</div>
+              <div class="kpi-trend">Thành viên gán nhãn dữ liệu</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+              <div class="card-title">👥 Quản Lý Phân Quyền Vai Trò (10 Thành Viên)</div>
+              <button class="btn btn-warning btn-sm" onclick="saveMembersRolesData()">
+                💾 Lưu Thay Đổi Phân Quyền
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:50px;text-align:center;">STT</th>
+                    <th>Họ và tên</th>
+                    <th>Email</th>
+                    <th style="min-width:230px;">Vai Trò (Role)</th>
+                    <th style="width:120px;">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody id="rolesTableBody">
+                  <tr><td colspan="5" style="text-align:center;padding:24px;">Đang tải danh sách thành viên...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+              <button class="btn btn-warning" onclick="saveMembersRolesData()">
+                💾 Lưu Toàn Bộ Phân Quyền
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Modal Popup Xem & Chỉnh Sửa Chi Tiết Lỗi -->
+  <div class="modal-backdrop" id="errorDetailModal">
+    <div class="modal-dialog" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title" id="modalErrorTitle">📄 Chi Tiết Lỗi Được Ghi Nhận</div>
+        <button class="modal-close" onclick="closeErrorDetailModal()">&times;</button>
+      </div>
+
+      <!-- CHẾ ĐỘ 1: XEM CHI TIẾT (VIEW MODE) -->
+      <div id="errorDetailViewMode">
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; font-size:13px; background:var(--bg-elevated); padding:14px; border-radius:8px;">
+            <div><span style="color:var(--text-secondary);">Thành viên:</span> <strong id="modalErrorMember">--</strong></div>
+            <div><span style="color:var(--text-secondary);">Mã Task / Mã Job:</span> <strong id="modalErrorTask" style="color:var(--primary);">--</strong></div>
+            <div><span style="color:var(--text-secondary);">Ngày ghi:</span> <span id="modalErrorDate">--</span></div>
+            <div><span style="color:var(--text-secondary);">Người ghi (QC):</span> <span id="modalErrorQC" style="font-weight:700;color:#38bdf8;">--</span></div>
+            <div style="grid-column: span 2;"><span style="color:var(--text-secondary);">Trạng thái hiện tại:</span> <span id="modalErrorStatus">--</span></div>
+          </div>
+
+          <div>
+            <label class="filter-label" style="font-weight:700;margin-bottom:6px;display:block;">Nội dung mô tả chi tiết lỗi:</label>
+            <div id="modalErrorDesc" style="background:var(--bg-elevated); padding:16px; border-radius:8px; font-size:13.5px; line-height:1.6; white-space:pre-wrap; max-height:350px; overflow-y:auto; border:1px solid var(--border-color); color:var(--text-main);"></div>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <button class="btn btn-danger btn-sm" id="modalBtnDelete" onclick="deleteModalError()">🗑️ Xóa lỗi này</button>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-warning btn-sm" onclick="switchErrorModalToEditMode()" title="Chỉnh sửa thông tin lỗi này">✏️ Sửa Lỗi</button>
+            <button class="btn btn-success btn-sm" id="modalBtnMarkFixed" onclick="setModalErrorStatus('Đã sửa')">✅ Đã sửa</button>
+            <button class="btn btn-secondary btn-sm" id="modalBtnMarkPending" onclick="setModalErrorStatus('Đang chờ')">⏳ Đang chờ</button>
+            <button class="btn btn-secondary btn-sm" onclick="closeErrorDetailModal()">Đóng</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHẾ ĐỘ 2: CHỈNH SỬA THÔNG TIN LỖI (EDIT MODE) -->
+      <div id="errorDetailEditMode" style="display:none;">
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+            <div>
+              <label class="filter-label">Thành viên vi phạm *</label>
+              <select class="form-select" id="modalEditMember" style="width:100%;margin-top:4px;font-weight:600;">
+                <!-- Tự động nạp danh sách thành viên -->
+              </select>
+            </div>
+            <div>
+              <label class="filter-label">Người ghi (QC) *</label>
+              <select class="form-select" id="modalEditQC" style="width:100%;margin-top:4px;font-weight:600;border-color:#38bdf8;">
+                <!-- Tự động nạp danh sách thành viên / QC -->
+              </select>
+            </div>
+            <div>
+              <label class="filter-label">Mã Task / Mã Job *</label>
+              <input type="text" class="form-input" id="modalEditTask" style="width:100%;margin-top:4px;" placeholder="Ví dụ: Task #1289, Job #1200,...">
+            </div>
+            <div>
+              <label class="filter-label">Ngày ghi nhận *</label>
+              <input type="date" class="form-input" id="modalEditDate" style="width:100%;margin-top:4px;">
+            </div>
+            <div style="grid-column: span 2;">
+              <label class="filter-label">Trạng thái xử lý *</label>
+              <select class="form-select" id="modalEditStatus" style="width:100%;margin-top:4px;font-weight:600;">
+                <option value="Đang chờ">⏳ Đang chờ</option>
+                <option value="Đã sửa">✅ Đã sửa</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="filter-label" style="font-weight:700;">Nội dung mô tả chi tiết lỗi *</label>
+            <textarea class="form-textarea" id="modalEditDesc" rows="5" style="width:100%;margin-top:4px;" placeholder="Ghi chi tiết vị trí lỗi, cách khắc phục..."></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="cancelErrorModalEdit()">❌ Hủy</button>
+          <button class="btn btn-primary btn-sm" onclick="saveEditedErrorLog()">💾 Lưu Thay Đổi</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal Popup Tự Tạo Dashboard Tuần Mới -->
+  <div class="modal-backdrop" id="createWeekModal" style="display:none;">
+    <div class="modal-dialog" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title">📅 Tạo Trang Dashboard Mới Theo Tuần</div>
+        <button class="modal-close" onclick="closeCreateWeekModal()">&times;</button>
+      </div>
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+        <div>
+          <label class="filter-label">Chọn ngày bắt đầu (hoặc ngày bất kỳ trong tuần cần tạo) *</label>
+          <input type="date" class="form-input" id="newWeekStartDate" style="width:100%;margin-top:6px;">
+          <small style="color:var(--text-muted);font-size:12px;margin-top:4px;display:block;">
+            💡 Hệ thống tự động tính khoảng thời gian từ Thứ 2 đến Chủ Nhật của tuần đó.
+          </small>
+        </div>
+        <div>
+          <label class="filter-label">Tên hiển thị tuần (Tùy chọn)</label>
+          <input type="text" class="form-input" id="newWeekCustomLabel" style="width:100%;margin-top:6px;" placeholder="Ví dụ: Tuần 2 (26/10 - 01/11/2026)">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="closeCreateWeekModal()">Đóng</button>
+        <button class="btn btn-success btn-sm" onclick="submitCreateNewWeek()">🚀 Tạo Tuần & Mở Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Popup Lịch Sử Nhập Số Liệu (Xem & Xóa Bản Ghi Nhập Nhầm) -->
+  <div class="modal-backdrop" id="dailyLogHistoryModal" style="display:none;">
+    <div class="modal-dialog" style="max-width: 1100px; width: 95%;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+          <span>📜</span> Lịch Sử Các Bản Ghi Nhập Số Liệu Hằng Ngày
+        </div>
+        <button class="modal-close" onclick="closeDailyLogHistoryModal()">&times;</button>
+      </div>
+
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px; padding:18px;">
+        <!-- Thanh bộ lọc tìm kiếm -->
+        <div class="filter-bar" style="margin-bottom:0; padding:10px 14px; flex-wrap:wrap; gap:12px; align-items:center; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="filter-label" style="margin:0;">👤 Thành viên:</span>
+            <select class="form-select" id="historyFilterMember" onchange="filterDailyLogsHistory()" style="min-width:180px; font-weight:600;">
+              <option value="">-- Tất cả thành viên --</option>
+            </select>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="filter-label" style="margin:0;">📅 Từ ngày:</span>
+            <input type="date" class="form-input" id="historyFilterFromDate" onchange="filterDailyLogsHistory()" style="padding:5px 10px; width:145px; font-weight:600;">
+          </div>
+
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="filter-label" style="margin:0;">Đến ngày:</span>
+            <input type="date" class="form-input" id="historyFilterToDate" onchange="filterDailyLogsHistory()" style="padding:5px 10px; width:145px; font-weight:600;">
+          </div>
+
+          <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="loadDailyLogsHistory(true)" title="Tải lại danh sách từ hệ thống" style="display:inline-flex; align-items:center; gap:6px;">
+              🔄 Làm mới
+            </button>
+          </div>
+        </div>
+
+        <!-- Thống kê tóm tắt & Hướng dẫn xóa -->
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; color:var(--text-secondary); padding:0 4px; flex-wrap:wrap; gap:8px;">
+          <span id="historyRecordCount">Đang tải lịch sử...</span>
+          <span style="font-size:12px; color:var(--text-muted); background:rgba(239,68,68,0.1); padding:4px 10px; border-radius:6px; border:1px solid rgba(239,68,68,0.2);">
+            ⚠️ Bấm nút <strong style="color:#ef4444;">🗑️ Xóa</strong> ở dòng tương ứng để xóa bản ghi bị nhập nhầm.
+          </span>
+        </div>
+
+        <!-- Bảng Danh Sách Lịch Sử -->
+        <div class="table-responsive" style="max-height: 480px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+          <table class="data-table">
+            <thead style="position: sticky; top: 0; background: #0f172a; z-index: 2;">
+              <tr>
+                <th style="width:45px; text-align:center;">STT</th>
+                <th style="width:105px;">Ngày</th>
+                <th style="min-width:140px;">Thành viên</th>
+                <th style="text-align:right;">Sản lượng</th>
+                <th style="text-align:right;">Target</th>
+                <th style="text-align:center;">% Đạt</th>
+                <th style="text-align:center;">Giờ làm</th>
+                <th style="text-align:center;">Rework</th>
+                <th style="text-align:center;">Accuracy</th>
+                <th style="min-width:140px;">Ghi chú</th>
+                <th style="width:90px; text-align:center;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="dailyLogHistoryTableBody">
+              <tr><td colspan="11" style="text-align:center; padding:30px; color:var(--text-muted);">Đang tải dữ liệu lịch sử...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:12px; color:var(--text-muted);">Mọi thao tác xóa sẽ cập nhật tức thời vào cơ sở dữ liệu.</span>
+        <button class="btn btn-secondary btn-sm" onclick="closeDailyLogHistoryModal()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Include Client JavaScript -->
+  <?!= include('js'); ?>
+
+</body>
+</html>

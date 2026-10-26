@@ -1,0 +1,3155 @@
+<script>
+/**
+ * ============================================================================
+ * JS.HTML - CLIENT-SIDE CONTROLLER & TRỰC QUAN HÓA DỮ LIỆU
+ * Hệ thống Quản Lý Team Data Annotation
+ * ============================================================================
+ */
+
+var DEFAULT_10_MEMBERS = [
+  { MemberID: 'MB009', FullName: 'Nguyễn Tiến Sỹ', Role: 'Team Lead' },
+  { MemberID: 'MB001', FullName: 'Nguyễn Minh Tú', Role: 'Annotator + QC' },
+  { MemberID: 'MB010', FullName: 'Nguyễn Văn Tuyển', Role: 'Annotator + QC' },
+  { MemberID: 'MB002', FullName: 'Dư Văn Sang', Role: 'Annotator' },
+  { MemberID: 'MB003', FullName: 'Ngô Văn Cao', Role: 'Annotator' },
+  { MemberID: 'MB004', FullName: 'Nguyễn Công Bình', Role: 'Annotator' },
+  { MemberID: 'MB005', FullName: 'Nguyễn Hữu Dũng', Role: 'Annotator' },
+  { MemberID: 'MB006', FullName: 'Phạm Văn Thân', Role: 'Annotator' },
+  { MemberID: 'MB007', FullName: 'Bạch Khánh An', Role: 'Annotator' },
+  { MemberID: 'MB008', FullName: 'Trần Minh Hiếu', Role: 'Annotator' }
+];
+
+// Global State
+var AppState = {
+  currentUser: { id: 'MB009', name: 'Nguyễn Tiến Sỹ', email: '', role: 'Team Lead' },
+  members: DEFAULT_10_MEMBERS.slice(),
+  projects: [],
+  errorCategories: [],
+  availableWeeks: [],
+  selectedWeek: null,
+  activeTab: 'dashboard',
+  charts: {
+    outputVsTargetWeek: null,
+    outputVsTargetDay: null,
+    memberTrends: null
+  }
+};
+
+// ============================================================================
+// 1. TIỆN ÍCH THÔNG BÁO VÀ LOADING (TOAST & SPINNER)
+// ============================================================================
+
+function showToast(message, type) {
+  type = type || 'success';
+  var container = document.getElementById('toastContainer');
+  if (!container) return;
+
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+
+  var icon = '✅';
+  if (type === 'error') icon = '❌';
+  if (type === 'warning') icon = '⚠️';
+
+  toast.innerHTML = '<span class="toast-icon">' + icon + '</span><span class="toast-msg">' + message + '</span>';
+  container.appendChild(toast);
+
+  setTimeout(function() {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(50px)';
+    toast.style.transition = 'all 0.3s ease';
+    setTimeout(function() {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, 4000);
+}
+
+function showLoading(text) {
+  var overlay = document.getElementById('loadingOverlay');
+  var txt = document.getElementById('loadingText');
+  if (txt) txt.innerText = text || 'Đang xử lý dữ liệu...';
+  if (overlay) overlay.classList.add('show');
+}
+
+function hideLoading() {
+  var overlay = document.getElementById('loadingOverlay');
+  if (overlay) overlay.classList.remove('show');
+}
+
+/**
+ * Wrapper an toàn gọi google.script.run với thông báo lỗi tiếng Việt
+ */
+function callServer(functionName, args, onSuccess, customErrorMsg) {
+  showLoading();
+  var runner = google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (onSuccess) onSuccess(response);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      var errMsg = (err && err.message) ? err.message : err.toString();
+      showToast(customErrorMsg ? (customErrorMsg + ': ' + errMsg) : ('Lỗi: ' + errMsg), 'error');
+      console.error('Lỗi gọi hàm ' + functionName + ':', err);
+    });
+
+  if (args && args.length !== undefined) {
+    runner[functionName].apply(runner, args);
+  } else if (args !== undefined) {
+    runner[functionName](args);
+  } else {
+    runner[functionName]();
+  }
+}
+
+function getDefaultFallbackWeeks() {
+  var now = new Date();
+  var day = now.getDay();
+  var diffToMon = (day === 0 ? -6 : 1 - day);
+  var mon = new Date(now);
+  mon.setDate(now.getDate() + diffToMon);
+  var sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+
+  function fmt(d) {
+    var mm = (d.getMonth() + 1);
+    var dd = d.getDate();
+    return d.getFullYear() + '-' + (mm < 10 ? '0' : '') + mm + '-' + (dd < 10 ? '0' : '') + dd;
+  }
+  function fmtVN(d) {
+    var dd = d.getDate();
+    var mm = (d.getMonth() + 1);
+    return (dd < 10 ? '0' : '') + dd + '/' + (mm < 10 ? '0' : '') + mm;
+  }
+
+  var prevMon = new Date(mon);
+  prevMon.setDate(mon.getDate() - 7);
+  var prevSun = new Date(sun);
+  prevSun.setDate(sun.getDate() - 7);
+
+  return [
+    { weekLabel: 'Tuần này (' + fmtVN(mon) + ' - ' + fmtVN(sun) + ')', fromStr: fmt(mon), toStr: fmt(sun), isCurrent: true },
+    { weekLabel: 'Tuần trước (' + fmtVN(prevMon) + ' - ' + fmtVN(prevSun) + ')', fromStr: fmt(prevMon), toStr: fmt(prevSun), isCurrent: false }
+  ];
+}
+
+// ============================================================================
+// 2. KHỞI TẠO HỆ THỐNG BAN ĐẦU
+// ============================================================================
+
+function setupImmediateDropdowns() {
+  populateSelectDropdowns();
+  populateWeekDropdowns(AppState.availableWeeks);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() {
+    setupImmediateDropdowns();
+    initApp();
+  });
+} else {
+  setupImmediateDropdowns();
+  initApp();
+}
+
+function initApp() {
+  showLoading('Đang tải cấu hình hệ thống...');
+  google.script.run
+    .withSuccessHandler(function(data) {
+      hideLoading();
+      if (data && data.success) {
+        AppState.currentUser = data.user || AppState.currentUser;
+        if (data.members && data.members.length > 0) {
+          AppState.members = data.members;
+        }
+        AppState.projects = data.projects || [];
+        AppState.errorCategories = data.errorCategories || [];
+      }
+
+      // Cập nhật giao diện người dùng
+      renderUserHeader(AppState.currentUser);
+      populateSelectDropdowns();
+
+      // Tải danh sách tuần độc lập
+      loadAvailableWeeks(function() {
+        // Tải Dashboard mặc định cho tuần mới nhất
+        loadDashboardData();
+      });
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      console.warn('Lỗi kết nối máy chủ getInitialData:', err);
+      renderUserHeader(AppState.currentUser);
+      populateSelectDropdowns();
+      loadAvailableWeeks(function() {
+        loadDashboardData();
+      });
+    })
+    .getInitialData();
+}
+
+function renderUserHeader(user) {
+  var uName = document.getElementById('currentUserName');
+  var uRole = document.getElementById('currentUserRole');
+  var uAvatar = document.getElementById('currentUserAvatar');
+
+  if (uName) uName.innerText = user.name || user.email;
+  if (uRole) uRole.innerText = user.role;
+  if (uAvatar) uAvatar.innerText = (user.name || user.email || 'U').charAt(0).toUpperCase();
+
+  // Ẩn/Hiện các menu theo quyền
+  var isAnnotator = (user.role === 'ANNOTATOR');
+  var adminOnlyEls = document.querySelectorAll('.admin-only');
+  adminOnlyEls.forEach(function(el) {
+    el.style.display = isAnnotator ? 'none' : '';
+  });
+}
+
+function loadAvailableWeeks(callback) {
+  google.script.run
+    .withSuccessHandler(function(weeks) {
+      if (weeks && weeks.length > 0) {
+        AppState.availableWeeks = weeks;
+      } else if (!AppState.availableWeeks || AppState.availableWeeks.length === 0) {
+        AppState.availableWeeks = getDefaultFallbackWeeks();
+      }
+      populateWeekDropdowns(AppState.availableWeeks);
+      if (AppState.availableWeeks && AppState.availableWeeks.length > 0) {
+        AppState.selectedWeek = AppState.availableWeeks[0]; // Chọn tuần mới nhất
+      }
+      if (callback) callback();
+    })
+    .withFailureHandler(function(err) {
+      console.error('Lỗi tải danh sách tuần:', err);
+      if (!AppState.availableWeeks || AppState.availableWeeks.length === 0) {
+        AppState.availableWeeks = getDefaultFallbackWeeks();
+      }
+      populateWeekDropdowns(AppState.availableWeeks);
+      if (callback) callback();
+    })
+    .getAvailableWeeks();
+}
+
+function formatShortDateStr(str) {
+  if (!str) return '';
+  var parts = str.split('-');
+  if (parts.length === 3) return parts[2] + '/' + parts[1];
+  return str;
+}
+
+function populateWeekDropdowns(weeks) {
+  var dashSelect = document.getElementById('dashboardWeekSelect');
+  var reportSelect = document.getElementById('reportWeekSelect');
+
+  var list = (weeks && weeks.length > 0) ? weeks : getDefaultFallbackWeeks();
+
+  var html = '';
+  for (var i = 0; i < list.length; i++) {
+    var w = list[i];
+    var label = w.weekLabel || 'Tuần';
+    // Nếu nhãn chưa có ngày tháng thì tự động ghép thêm để dễ phân biệt
+    if (label.indexOf('/') === -1 && w.fromStr && w.toStr) {
+      label += ' (' + formatShortDateStr(w.fromStr) + ' - ' + formatShortDateStr(w.toStr) + ')';
+    }
+    html += '<option value="' + w.fromStr + '" data-to="' + w.toStr + '">' + label + '</option>';
+  }
+
+  if (dashSelect) dashSelect.innerHTML = html;
+  if (reportSelect) reportSelect.innerHTML = html;
+  var rankSelect = document.getElementById('rankWeekSelect');
+  if (rankSelect) rankSelect.innerHTML = html;
+  var attSelect = document.getElementById('attitudeWeekSelect');
+  if (attSelect) attSelect.innerHTML = html;
+}
+
+function populateSelectDropdowns() {
+  var members = (AppState.members && AppState.members.length > 0) ? AppState.members : DEFAULT_10_MEMBERS;
+
+  // 1. Dropdown chọn thành viên ở trang Nhập Số Liệu
+  var inputMemSel = document.getElementById('inputMemberSelect');
+  if (inputMemSel) {
+    if (members.length === 0) {
+      inputMemSel.innerHTML = '<option value="">-- Chưa có thành viên trong hệ thống --</option>';
+    } else {
+      var inHtml = '';
+      for (var i = 0; i < members.length; i++) {
+        var m = members[i];
+        inHtml += '<option value="' + m.MemberID + '">' + m.FullName + ' (' + (m.Role || 'Annotator') + ')</option>';
+      }
+      inputMemSel.innerHTML = inHtml;
+
+      // Nếu người dùng là annotator, mặc định chọn chính mình
+      if (AppState.currentUser && AppState.currentUser.id) {
+        inputMemSel.value = AppState.currentUser.id;
+      }
+    }
+  }
+
+  // 2. Dropdown chọn thành viên bị lỗi ở form Ghi Lỗi Nhanh
+  var errMemSel = document.getElementById('errorMemberSelect');
+  if (errMemSel) {
+    if (members.length === 0) {
+      errMemSel.innerHTML = '<option value="">-- Chưa có thành viên trong hệ thống --</option>';
+    } else {
+      var errHtml = '<option value="">-- Chọn thành viên vi phạm --</option>';
+      for (var j = 0; j < members.length; j++) {
+        var m2 = members[j];
+        errHtml += '<option value="' + m2.MemberID + '">' + m2.FullName + ' (' + (m2.Role || 'Annotator') + ')</option>';
+      }
+      errMemSel.innerHTML = errHtml;
+    }
+  }
+
+  // Dropdown chọn Người ghi (QC) ở form Ghi Lỗi Nhanh
+  var errQcSel = document.getElementById('errorQcSelect');
+  if (errQcSel) {
+    if (members.length === 0) {
+      errQcSel.innerHTML = '<option value="">-- Chưa có thành viên trong hệ thống --</option>';
+    } else {
+      var qcHtml = '<option value="">-- Chọn Người ghi (QC) --</option>';
+      for (var q = 0; q < members.length; q++) {
+        var mq = members[q];
+        var roleTag = mq.Role ? ' (' + mq.Role + ')' : '';
+        qcHtml += '<option value="' + mq.FullName + '">' + mq.FullName + roleTag + '</option>';
+      }
+      errQcSel.innerHTML = qcHtml;
+
+      // Ưu tiên chọn mặc định thành viên có role QC hoặc Team Lead
+      var defaultQC = members.find(function(m) {
+        return (m.Role && (m.Role.indexOf('QC') !== -1 || m.Role.indexOf('Lead') !== -1));
+      });
+      if (defaultQC) {
+        errQcSel.value = defaultQC.FullName;
+      }
+    }
+  }
+
+  // 3. Dropdown lọc danh sách lỗi theo thành viên
+  var errFilterMem = document.getElementById('errFilterMember');
+  if (errFilterMem) {
+    var filterHtml = '<option value="">-- Tất cả thành viên --</option>';
+    for (var k = 0; k < members.length; k++) {
+      var m3 = members[k];
+      filterHtml += '<option value="' + m3.MemberID + '">' + m3.FullName + ' (' + (m3.Role || 'Annotator') + ')</option>';
+    }
+    errFilterMem.innerHTML = filterHtml;
+  }
+
+  // Dropdown lọc danh sách lỗi theo Người ghi (QC)
+  var errFilterQC = document.getElementById('errFilterQC');
+  if (errFilterQC) {
+    var filterQcHtml = '<option value="">-- Tất cả người ghi (QC) --</option>';
+    for (var fq = 0; fq < members.length; fq++) {
+      var mfq = members[fq];
+      var fRoleTag = mfq.Role ? ' (' + mfq.Role + ')' : '';
+      filterQcHtml += '<option value="' + mfq.FullName + '">' + mfq.FullName + fRoleTag + '</option>';
+    }
+    errFilterQC.innerHTML = filterQcHtml;
+  }
+
+  // 4. Dropdown danh mục lỗi
+  var catSelect = document.getElementById('errorCategorySelect');
+  if (catSelect) {
+    var catOptions = '<option value="">-- Chọn loại lỗi --</option>';
+    for (var c = 0; c < AppState.errorCategories.length; c++) {
+      var cat = AppState.errorCategories[c];
+      catOptions += '<option value="' + cat.CategoryID + '" data-severity="' + cat.Severity + '" data-penalty="' + cat.DefaultPenalty + '">'
+        + cat.CategoryName + ' (' + cat.Severity + ' - ' + cat.DefaultPenalty + 'đ)'
+        + '</option>';
+    }
+    catSelect.innerHTML = catOptions;
+  }
+}
+
+// ============================================================================
+// 3. ĐIỀU HƯỚNG TAB
+// ============================================================================
+
+function switchTab(tabId) {
+  AppState.activeTab = tabId;
+
+  // Đổi trạng thái active trên sidebar
+  var navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(function(item) {
+    item.classList.remove('active');
+  });
+
+  var activeNav = document.getElementById('nav-' + tabId);
+  if (activeNav) activeNav.classList.add('active');
+
+  // Đổi view
+  var tabViews = document.querySelectorAll('.tab-view');
+  tabViews.forEach(function(view) {
+    view.style.display = 'none';
+  });
+
+  var targetView = document.getElementById('view-' + tabId);
+  if (targetView) targetView.style.display = 'block';
+
+  // Kích hoạt load dữ liệu tương ứng khi vào tab
+  if (tabId === 'dashboard') {
+    loadDashboardData();
+  } else if (tabId === 'attendance') {
+    loadAttendanceTable();
+  } else if (tabId === 'attitude') {
+    loadAttitudeEvaluationData();
+  } else if (tabId === 'errors') {
+    loadErrorLogsTable();
+  } else if (tabId === 'rankings') {
+    loadRankingsData();
+  } else if (tabId === 'reports') {
+    loadWeeklyReportTab();
+  } else if (tabId === 'roles') {
+    loadRolesManagementTab();
+  } else if (tabId === 'settings') {
+    loadAdminSettingsTab();
+  }
+}
+
+// ============================================================================
+// 4. LOGIC DASHBOARD (MỖI TUẦN 1 DASHBOARD ĐỘC LẬP)
+// ============================================================================
+
+function loadDashboardData() {
+  var weekSelect = document.getElementById('dashboardWeekSelect');
+  var selectedOpt = weekSelect ? weekSelect.options[weekSelect.selectedIndex] : null;
+
+  var fromDate = selectedOpt ? selectedOpt.value : '';
+  var toDate = selectedOpt ? selectedOpt.getAttribute('data-to') : '';
+
+  showLoading('Đang tải dữ liệu Dashboard tuần...');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || !res.success) {
+        showToast('Không thể tải số liệu Dashboard!', 'error');
+        return;
+      }
+      renderDashboardMetrics(res.metrics);
+      renderDashboardCharts(res.charts);
+      renderRecentErrorsTable(res.recentErrors);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi tải Dashboard: ' + err.message, 'error');
+    })
+    .getDashboardData(fromDate, toDate);
+}
+
+function renderDashboardMetrics(metrics) {
+  var curr = metrics.current;
+  var cmp = metrics.comparison;
+
+  // Thẻ 1: Tổng Sản lượng (Cuboid)
+  updateKpiCard('kpiOutput', curr.totalOutput.toLocaleString('vi-VN'), cmp.output.diff, cmp.output.pct, cmp.output.isUp, 'Cuboid');
+
+  // Hiển thị chỉ tiêu KPI và tỷ lệ đạt nhỏ bên dưới
+  var subTargetEl = document.getElementById('kpiOutputSubTarget');
+  if (subTargetEl) {
+    var tgtFormatted = (curr.totalTarget || 0).toLocaleString('vi-VN');
+    var rateColor = curr.targetCompletionRate >= 100 ? 'var(--success)' : (curr.targetCompletionRate >= 85 ? 'var(--primary)' : 'var(--danger)');
+    subTargetEl.innerHTML = '🎯 Mục tiêu: <strong>' + tgtFormatted + ' Cuboid</strong> · <span style="color:' + rateColor + ';font-weight:700;">Đạt ' + curr.targetCompletionRate + '% KPI</span>';
+  }
+
+  // Thẻ 2: % Đạt Target
+  updateKpiCard('kpiTargetRate', curr.targetCompletionRate + '%', cmp.targetRate.diff, cmp.targetRate.pct, cmp.targetRate.isUp, '%');
+
+  // Thẻ 3: Số người đạt Target
+  var reachEl = document.getElementById('kpiTargetReach');
+  if (reachEl) {
+    reachEl.innerHTML = '<span style="color:var(--success);font-weight:800;">' + curr.membersMetTarget + '</span> Đạt / '
+      + '<span style="color:var(--danger);font-weight:800;">' + curr.membersBelowTarget + '</span> Chưa đạt';
+  }
+}
+
+function updateKpiCard(elementId, value, diff, pct, isGood, unit) {
+  var valEl = document.getElementById(elementId + 'Value');
+  var trendEl = document.getElementById(elementId + 'Trend');
+
+  if (valEl) valEl.innerText = value;
+  if (trendEl) {
+    var icon = diff >= 0 ? '▲' : '▼';
+    var cls = isGood ? 'trend-up' : 'trend-down';
+    trendEl.className = 'kpi-trend ' + cls;
+    trendEl.innerHTML = icon + ' ' + Math.abs(diff) + ' ' + (unit || '') + ' (' + Math.abs(pct) + '%) so với kỳ trước';
+  }
+}
+
+var currentDashboardChartsData = null;
+
+function renderDashboardCharts(chartsData) {
+  currentDashboardChartsData = chartsData;
+
+  // Hủy chart cũ nếu có
+  if (AppState.charts.outputVsTargetWeek) AppState.charts.outputVsTargetWeek.destroy();
+  if (AppState.charts.outputVsTargetDay) AppState.charts.outputVsTargetDay.destroy();
+  if (AppState.charts.memberTrends) AppState.charts.memberTrends.destroy();
+
+  if (!chartsData || !chartsData.kpiComparison) return;
+
+  // 1. VẼ BIỂU ĐỒ 1A: TỔNG CẢ TUẦN (Thang đo 0 -> 9000)
+  renderChartWeek(chartsData.kpiComparison);
+
+  // 2. VẼ BẢNG MA TRẬN KPI THEO NGÀY (MẪU CHUẨN MỚI GIỐNG ẢNH YÊU CẦU)
+  renderKpiDailyMatrixTable(chartsData.kpiComparison);
+
+  // 3. VẼ BIỂU ĐỒ 2: XU HƯỚNG SẢN LƯỢNG TỪNG THÀNH VIÊN THEO NGÀY (Thang đo 0 -> 2100)
+  var ctx2 = document.getElementById('chartMemberTrends');
+  if (ctx2 && chartsData.memberTrends) {
+    var datasets = [];
+    var rawDatasets = chartsData.memberTrends.datasets || [];
+    for (var m = 0; m < rawDatasets.length; m++) {
+      var d = rawDatasets[m];
+      datasets.push({
+        label: d.label,
+        data: d.data,
+        borderColor: d.color,
+        backgroundColor: 'transparent',
+        tension: 0.25,
+        borderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      });
+    }
+
+    AppState.charts.memberTrends = new Chart(ctx2.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: chartsData.memberTrends.labels,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#cbd5e1', boxWidth: 14, padding: 12, font: { weight: '600' } }
+          },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            titleColor: '#f8fafc',
+            bodyColor: '#f8fafc',
+            padding: 10,
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#94a3b8', font: { weight: '600' } },
+            grid: { color: 'rgba(255,255,255,0.06)' }
+          },
+          // Thang đo sản lượng 0 300 600 900 1200 1500 1800 2100
+          y: {
+            min: 0,
+            suggestedMax: 2100,
+            ticks: {
+              stepSize: 300,
+              color: '#94a3b8',
+              font: { weight: '600' }
+            },
+            grid: { color: 'rgba(255,255,255,0.06)' }
+          }
+        }
+      }
+    });
+  }
+}
+
+/**
+ * Biểu đồ 1A: KPI Tổng Cả Tuần - Thang đo 0 -> 9000 (bước 1000)
+ */
+function renderChartWeek(kpiComp) {
+  var ctx = document.getElementById('chartOutputVsTargetWeek');
+  if (!ctx) return;
+
+  if (AppState.charts.outputVsTargetWeek) {
+    AppState.charts.outputVsTargetWeek.destroy();
+  }
+
+  AppState.charts.outputVsTargetWeek = new Chart(ctx.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: kpiComp.memberNames,
+      datasets: [
+        {
+          label: 'KPI Yêu Cầu (Target Cả Tuần)',
+          data: kpiComp.weeklyTargets,
+          backgroundColor: '#f59e0b', // Màu cam vàng Amber
+          borderRadius: 6,
+          maxBarThickness: 34
+        },
+        {
+          label: 'KPI Làm Được (Thực Tế Cả Tuần)',
+          data: kpiComp.weeklyOutputs,
+          backgroundColor: '#3b82f6', // Màu xanh dương hiện đại
+          borderRadius: 6,
+          maxBarThickness: 34
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#cbd5e1',
+            boxWidth: 16,
+            padding: 16,
+            font: { size: 13, weight: '700' }
+          }
+        },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          titleColor: '#f8fafc',
+          bodyColor: '#f8fafc',
+          padding: 10,
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#cbd5e1', font: { weight: '600', size: 12 } },
+          grid: { display: false }
+        },
+        // Thang đo sản lượng cả tuần: 0 1000 2000 3000 4000 5000 6000 7000 8000 9000
+        y: {
+          min: 0,
+          suggestedMax: 9000,
+          ticks: {
+            stepSize: 1000,
+            color: '#94a3b8',
+            font: { weight: '600' }
+          },
+          grid: { color: 'rgba(255,255,255,0.06)' }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * BẢNG KPI THEO NGÀY (MẪU MA TRẬN TỪNG THÀNH VIÊN)
+ * Cột: Annotator | T2 19/10 | T3 20/10 ... | TB / ngày | % KPI | Xếp loại
+ */
+function renderKpiDailyMatrixTable(kpiComp) {
+  var thead = document.getElementById('kpiDailyMatrixThead');
+  var tbody = document.getElementById('kpiDailyMatrixTbody');
+  if (!tbody || !kpiComp) return;
+
+  var days = kpiComp.days || [];
+  var matrixMembers = kpiComp.matrixMembers || [];
+
+  // Nếu matrixMembers chưa có, tái cấu trúc từ memberNames và dailyComparison
+  if (matrixMembers.length === 0 && kpiComp.memberNames) {
+    for (var i = 0; i < kpiComp.memberNames.length; i++) {
+      var name = kpiComp.memberNames[i];
+      var byDate = {};
+      for (var d = 0; d < days.length; d++) {
+        var dStr = days[d].dateStr;
+        var dayData = (kpiComp.dailyComparison && kpiComp.dailyComparison[dStr]) ? kpiComp.dailyComparison[dStr] : null;
+        byDate[dStr] = {
+          output: dayData && dayData.outputs ? (dayData.outputs[i] || 0) : 0,
+          target: dayData && dayData.targets ? (dayData.targets[i] || 20) : 20,
+          notes: ''
+        };
+      }
+      matrixMembers.push({
+        name: name,
+        byDate: byDate,
+        dailyTarget: (kpiComp.weeklyTargets && kpiComp.weeklyTargets[i]) ? Math.round(kpiComp.weeklyTargets[i] / (days.length || 7)) : 20
+      });
+    }
+  }
+
+  // 1. Tạo Header Thead
+  if (thead) {
+    var headerHtml = '<tr><th style="text-align:left; padding-left:18px;">Annotator</th>';
+    for (var h = 0; h < days.length; h++) {
+      var dayObj = days[h];
+      var colTitle = dayObj.headerLabel || (dayObj.shortDay ? (dayObj.shortDay + ' ' + dayObj.label) : dayObj.label);
+      headerHtml += '<th style="text-align:center;">' + colTitle + '</th>';
+    }
+    headerHtml += '<th style="text-align:center;">TB / ngày</th>';
+    headerHtml += '<th style="text-align:center;">% KPI</th>';
+    headerHtml += '<th style="text-align:center;">Xếp loại</th></tr>';
+    thead.innerHTML = headerHtml;
+  }
+
+  if (matrixMembers.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="' + (days.length + 4) + '" style="text-align:center; padding:32px; color:var(--text-muted);">Chưa có dữ liệu thành viên trong tuần này!</td></tr>';
+    return;
+  }
+
+  // 2. Tính toán TB/ngày, % KPI và Xếp loại cho từng thành viên
+  var computedRows = [];
+  for (var m = 0; m < matrixMembers.length; m++) {
+    var member = matrixMembers[m];
+    var dayCells = [];
+    var totalWorkedOutput = 0;
+    var totalWorkedTarget = 0; // Tổng Target thực tế của các ngày có đi làm
+    var workedDaysCount = 0;
+    var defaultDailyTarget = member.dailyTarget || 20;
+
+    for (var c = 0; c < days.length; c++) {
+      var dDate = days[c].dateStr;
+      var stat = (member.byDate && member.byDate[dDate]) ? member.byDate[dDate] : { output: 0, target: defaultDailyTarget, notes: '' };
+      var out = stat.output || 0;
+      var tgt = (stat.target !== undefined && stat.target !== null && !isNaN(stat.target) && stat.target > 0) ? stat.target : defaultDailyTarget;
+      var notes = (stat.notes || '').toLowerCase();
+
+      var cellHtml = '';
+      if (out > 0) {
+        totalWorkedOutput += out;
+        totalWorkedTarget += tgt;
+        workedDaysCount++;
+
+        var formattedOut = formatViNumber(out);
+        var formattedTgt = formatViNumber(tgt);
+        var dayTitle = 'Ngày ' + days[c].label + ': Làm được ' + formattedOut + ' / Mục tiêu: ' + formattedTgt;
+
+        if (out >= tgt) {
+          // Xuất sắc (Xanh lá)
+          cellHtml = '<span class="kpi-day-cell kpi-cell-excellent" title="' + dayTitle + '">' + formattedOut + '</span>';
+        } else if (out >= tgt * 0.8) {
+          // Bình thường (Vàng Amber)
+          cellHtml = '<span class="kpi-day-cell kpi-cell-normal" title="' + dayTitle + '">' + formattedOut + '</span>';
+        } else {
+          // Dưới KPI (Đỏ)
+          cellHtml = '<span class="kpi-day-cell kpi-cell-warning" title="' + dayTitle + '">' + formattedOut + '</span>';
+        }
+      } else {
+        // out === 0: Kiểm tra ghi chú nếu có 'done job' hoặc 'nghỉ'
+        if (notes.indexOf('done') !== -1 || notes.indexOf('hoàn thành') !== -1 || notes.indexOf('chốt') !== -1) {
+          cellHtml = '<span class="kpi-day-cell kpi-cell-done" title="Hoàn thành công việc sớm">Done job</span>';
+        } else {
+          cellHtml = '<span class="kpi-day-cell kpi-cell-off" title="Nghỉ / Không phát sinh sản lượng">Nghỉ</span>';
+        }
+      }
+      dayCells.push(cellHtml);
+    }
+
+    // TB sản lượng các ngày làm việc thực tế
+    var avgDaily = workedDaysCount > 0 ? Math.round(totalWorkedOutput / workedDaysCount) : 0;
+
+    // % KPI: Tính trực tiếp dựa trên Tổng Sản Lượng ÷ Tổng Target mà bạn nhập cho từng ngày!
+    // Ví dụ: Ngày thường nhập 120, ngày nửa ngày nhập 10, ngày tăng tốc nhập 150...
+    // đều được cộng dồn chính xác, không bị phụ thuộc vào số mặc định 20.
+    var percentKpi = totalWorkedTarget > 0 
+      ? Math.round((totalWorkedOutput / totalWorkedTarget) * 100) 
+      : (defaultDailyTarget > 0 ? Math.round((avgDaily / defaultDailyTarget) * 100) : 0);
+
+    var rankCategory = { label: 'Dưới KPI', cls: 'rank-warning' };
+    if (percentKpi >= 100) {
+      rankCategory = { label: 'Xuất sắc', cls: 'rank-excellent' };
+    } else if (percentKpi >= 80) {
+      rankCategory = { label: 'Bình thường', cls: 'rank-normal' };
+    }
+
+    computedRows.push({
+      name: member.name,
+      dayCells: dayCells,
+      avgDaily: avgDaily,
+      totalWorkedOutput: totalWorkedOutput,
+      totalWorkedTarget: totalWorkedTarget,
+      percentKpi: percentKpi,
+      rankCategory: rankCategory
+    });
+  }
+
+  // Sắp xếp thứ tự giảm dần theo % KPI (hoặc TB/ngày) giống y hệt ảnh mẫu
+  computedRows.sort(function(a, b) {
+    if (b.percentKpi !== a.percentKpi) {
+      return b.percentKpi - a.percentKpi;
+    }
+    return b.avgDaily - a.avgDaily;
+  });
+
+  // 3. Render các dòng của bảng
+  var bodyHtml = '';
+  for (var r = 0; r < computedRows.length; r++) {
+    var row = computedRows[r];
+    var kpiTitle = 'Tổng làm: ' + formatViNumber(row.totalWorkedOutput) + ' / Tổng Target: ' + formatViNumber(row.totalWorkedTarget);
+    bodyHtml += '<tr>';
+    bodyHtml += '<td style="text-align:left; padding-left:18px;"><strong>' + row.name + '</strong></td>';
+    for (var dc = 0; dc < row.dayCells.length; dc++) {
+      bodyHtml += '<td>' + row.dayCells[dc] + '</td>';
+    }
+    bodyHtml += '<td><span class="kpi-tb-val">' + formatViNumber(row.avgDaily) + '</span></td>';
+    bodyHtml += '<td><span class="kpi-percent-val" title="' + kpiTitle + '" style="cursor:help;">' + row.percentKpi + '%</span></td>';
+    bodyHtml += '<td><span class="kpi-rank-pill ' + row.rankCategory.cls + '">● ' + row.rankCategory.label + '</span></td>';
+    bodyHtml += '</tr>';
+  }
+
+  tbody.innerHTML = bodyHtml;
+}
+
+/**
+ * Hàm định dạng số theo chuẩn Việt Nam (dấu chấm phân tách hàng nghìn)
+ */
+function formatViNumber(val) {
+  if (val === null || val === undefined || isNaN(val)) return '0';
+  return Math.round(val).toLocaleString('vi-VN');
+}
+
+// ============================================================================
+// MODAL TỰ TẠO DASHBOARD TUẦN MỚI
+// ============================================================================
+
+function openCreateWeekModal() {
+  var modal = document.getElementById('createWeekModal');
+  var dateInp = document.getElementById('newWeekStartDate');
+  var labelInp = document.getElementById('newWeekCustomLabel');
+
+  if (dateInp) {
+    // Mặc định chọn Thứ 2 tuần sau
+    var now = new Date();
+    var nextMonday = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
+    dateInp.value = nextMonday.toISOString().substring(0, 10);
+  }
+  if (labelInp) labelInp.value = '';
+
+  if (modal) {
+    modal.style.display = 'flex';
+    setTimeout(function() {
+      modal.classList.add('show');
+    }, 10);
+  }
+}
+
+function closeCreateWeekModal() {
+  var modal = document.getElementById('createWeekModal');
+  if (modal) {
+    modal.classList.remove('show');
+    setTimeout(function() {
+      modal.style.display = 'none';
+    }, 200);
+  }
+}
+
+function submitCreateNewWeek() {
+  var dateInp = document.getElementById('newWeekStartDate');
+  var labelInp = document.getElementById('newWeekCustomLabel');
+
+  var dateVal = dateInp ? dateInp.value : '';
+  var labelVal = labelInp ? labelInp.value : '';
+
+  if (!dateVal) {
+    showToast('Vui lòng chọn ngày để tạo tuần mới!', 'warning');
+    return;
+  }
+
+  showLoading('Đang tạo Dashboard tuần mới...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || !res.success) {
+        showToast(res ? res.message : 'Lỗi khi tạo tuần mới!', 'error');
+        return;
+      }
+
+      showToast(res.message, 'success');
+      closeCreateWeekModal();
+
+      // Cập nhật lại dropdown danh sách tuần
+      if (res.availableWeeks) {
+        populateWeekDropdowns(res.availableWeeks);
+      }
+
+      // Chọn ngay tuần vừa tạo và mở Dashboard
+      var dashSelect = document.getElementById('dashboardWeekSelect');
+      if (dashSelect && res.week) {
+        dashSelect.value = res.week.fromStr;
+      }
+
+      loadDashboardData();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi: ' + err.message, 'error');
+    })
+    .createNewWeekDashboard(dateVal, labelVal);
+}
+
+function renderRecentErrorsTable(errors) {
+  var tbody = document.getElementById('dashRecentErrorsBody');
+  if (!tbody) return;
+
+  if (!errors || errors.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">Không có lỗi phát sinh trong kỳ!</td></tr>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < errors.length; i++) {
+    var err = errors[i];
+    var isFixed = (err.Status === 'Đã sửa');
+    var statusBadge = isFixed 
+      ? '<span class="badge" style="background:#10b981;color:#fff;">✅ Đã sửa</span>'
+      : '<span class="badge" style="background:#f59e0b;color:#000;">⏳ Đang chờ</span>';
+
+    html += '<tr>'
+      + '<td>' + err.Date + '</td>'
+      + '<td><strong>' + err.MemberName + '</strong></td>'
+      + '<td><span style="color:var(--primary);font-weight:600;">' + (err.TaskId || '-') + '</span></td>'
+      + '<td>' + statusBadge + '</td>'
+      + '<td><button class="btn btn-primary btn-sm" onclick="switchTab(\'errors\')">Xem chi tiết</button></td>'
+      + '</tr>';
+  }
+
+  tbody.innerHTML = html;
+}
+
+// ============================================================================
+// 5. NHẬP SỐ LIỆU HẰNG NGÀY (DAILY LOGS INPUT)
+// ============================================================================
+
+function submitSingleDailyLog() {
+  var memberSelect = document.getElementById('inputMemberSelect');
+  var memberId = memberSelect ? memberSelect.value : '';
+  var date = document.getElementById('inputDate').value;
+  var output = document.getElementById('inputOutput').value;
+  var hours = document.getElementById('inputHours').value;
+  var rework = document.getElementById('inputRework').value;
+  var target = document.getElementById('inputTarget').value;
+  var note = document.getElementById('inputNote').value;
+
+  if (!memberId || !date || output === '') {
+    showToast('Vui lòng chọn thành viên, ngày thực hiện và nhập sản lượng!', 'warning');
+    return;
+  }
+
+  // Tìm thông tin thành viên từ AppState.members
+  var memObj = (AppState.members || []).find(function(m) { 
+    return m.MemberID === memberId; 
+  });
+  var memberName = memObj ? memObj.FullName : memberId;
+
+  var projectId = 'PRJ_3D_LIDAR';
+  var projectName = '3D Bounding Box Tracking (LiDAR & Camera)';
+
+  var logData = {
+    MemberID: memberId,
+    MemberName: memberName,
+    ProjectID: projectId,
+    ProjectName: projectName,
+    Date: date,
+    Output: parseFloat(output),
+    WorkHours: parseFloat(hours || 8),
+    ReworkCount: parseFloat(rework || 0),
+    TargetPerDay: parseFloat(target || 120),
+    Note: note
+  };
+
+  showLoading('Đang lưu số liệu...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+      document.getElementById('inputOutput').value = '';
+      document.getElementById('inputRework').value = '0';
+      document.getElementById('inputNote').value = '';
+      loadAvailableWeeks(); // Đồng bộ tuần mới nếu có
+      // Nếu modal lịch sử đang mở thì tự động reload
+      var histModal = document.getElementById('dailyLogHistoryModal');
+      if (histModal && histModal.style.display === 'flex') {
+        loadDailyLogsHistory(true);
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi lưu số liệu: ' + err.message, 'error');
+    })
+    .saveDailyLog(logData);
+}
+
+// ============================================================================
+// 5.1. QUẢN LÝ LỊCH SỬ NHẬP SỐ LIỆU & XÓA BẢN GHI NHẬP NHẦM
+// ============================================================================
+
+AppState.dailyLogsHistory = [];
+
+/**
+ * Mở modal xem lịch sử các bản ghi nhật ký đã nhập
+ */
+function openDailyLogHistoryModal() {
+  var modal = document.getElementById('dailyLogHistoryModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    setTimeout(function() {
+      modal.classList.add('show');
+    }, 10);
+  }
+
+  // Khởi tạo danh sách thành viên vào dropdown filter nếu chưa có
+  var select = document.getElementById('historyFilterMember');
+  if (select && select.options.length <= 1) {
+    var members = AppState.members || [];
+    for (var i = 0; i < members.length; i++) {
+      var m = members[i];
+      var opt = document.createElement('option');
+      opt.value = m.MemberID;
+      opt.textContent = m.FullName;
+      select.appendChild(opt);
+    }
+  }
+
+  loadDailyLogsHistory();
+}
+
+/**
+ * Đóng modal lịch sử nhập số liệu
+ */
+function closeDailyLogHistoryModal() {
+  var modal = document.getElementById('dailyLogHistoryModal');
+  if (modal) {
+    modal.classList.remove('show');
+    setTimeout(function() {
+      modal.style.display = 'none';
+    }, 200);
+  }
+}
+
+/**
+ * Tải danh sách lịch sử nhập số liệu từ server
+ * @param {boolean} forceReload Bắt buộc tải lại từ server
+ */
+function loadDailyLogsHistory(forceReload) {
+  var tbody = document.getElementById('dailyLogHistoryTableBody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:30px; color:var(--text-muted);">'
+      + '<div class="spinner" style="margin:0 auto 10px; width:28px; height:28px;"></div>Đang tải lịch sử nhập số liệu...</td></tr>';
+  }
+
+  google.script.run
+    .withSuccessHandler(function(logs) {
+      AppState.dailyLogsHistory = logs || [];
+      filterDailyLogsHistory();
+    })
+    .withFailureHandler(function(err) {
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:24px; color:var(--danger);">'
+          + '⚠️ Lỗi tải lịch sử: ' + err.message + '</td></tr>';
+      }
+      showToast('Lỗi tải lịch sử: ' + err.message, 'error');
+    })
+    .getDailyLogsHistory();
+}
+
+/**
+ * Lọc danh sách lịch sử theo bộ lọc của người dùng
+ */
+function filterDailyLogsHistory() {
+  var memberFilter = document.getElementById('historyFilterMember') ? document.getElementById('historyFilterMember').value : '';
+  var fromDate = document.getElementById('historyFilterFromDate') ? document.getElementById('historyFilterFromDate').value : '';
+  var toDate = document.getElementById('historyFilterToDate') ? document.getElementById('historyFilterToDate').value : '';
+
+  var allLogs = AppState.dailyLogsHistory || [];
+  var filtered = allLogs.filter(function(row) {
+    var matchMem = !memberFilter || (row.MemberID == memberFilter || row.MemberName == memberFilter);
+    var rowDate = row.Date ? String(row.Date).substring(0, 10) : '';
+    var matchFrom = !fromDate || (rowDate >= fromDate);
+    var matchTo = !toDate || (rowDate <= toDate);
+    return matchMem && matchFrom && matchTo;
+  });
+
+  renderDailyLogsHistoryTable(filtered);
+}
+
+/**
+ * Hiển thị dữ liệu bảng lịch sử nhật ký
+ * @param {Array} logs Danh sách bản ghi nhật ký
+ */
+function renderDailyLogsHistoryTable(logs) {
+  var tbody = document.getElementById('dailyLogHistoryTableBody');
+  var countEl = document.getElementById('historyRecordCount');
+  if (!tbody) return;
+
+  if (!logs || logs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:32px; color:var(--text-muted); font-size:14px;">'
+      + '🔍 Không tìm thấy bản ghi nhập số liệu nào phù hợp với bộ lọc hiện tại.</td></tr>';
+    if (countEl) countEl.innerText = 'Hiển thị 0 bản ghi';
+    return;
+  }
+
+  var totalOutput = 0;
+  var html = '';
+
+  for (var i = 0; i < logs.length; i++) {
+    var log = logs[i];
+    var out = parseFloat(log.Output || 0);
+    var tgt = parseFloat(log.TargetPerDay || 120);
+    var hrs = parseFloat(log.WorkHours || 8);
+    var rwk = parseFloat(log.ReworkCount || 0);
+    var acc = parseFloat(log.Accuracy !== undefined ? log.Accuracy : (out > 0 ? ((out - rwk) / out * 100) : 100));
+    var compRate = parseFloat(log.TargetCompletionRate !== undefined ? log.TargetCompletionRate : (tgt > 0 ? (out / tgt * 100) : 0));
+    var note = log.Note || '';
+
+    totalOutput += out;
+
+    var compRateColor = (compRate >= 100) ? 'color:var(--success);' : (compRate < 85 ? 'color:var(--danger);' : 'color:var(--text-main);');
+    var reworkBadge = (rwk > 0)
+      ? '<span class="badge" style="background:rgba(239,68,68,0.15); color:#ef4444; font-weight:800; padding:3px 7px;">' + rwk + '</span>'
+      : '<span style="color:var(--text-muted);">0</span>';
+
+    var rowDateDisplay = log.Date ? String(log.Date).substring(0, 10) : '--';
+    var safeLogId = String(log.LogID || '').replace(/'/g, "\\'");
+    var safeMemberName = String(log.MemberName || log.MemberID || '').replace(/'/g, "\\'");
+
+    html += '<tr style="transition:background 0.15s;">'
+      + '<td style="text-align:center; font-weight:600; color:var(--text-muted);">' + (i + 1) + '</td>'
+      + '<td><strong>' + rowDateDisplay + '</strong></td>'
+      + '<td><strong style="color:#fff;">' + (log.MemberName || 'Thành viên') + '</strong></td>'
+      + '<td style="text-align:right; font-weight:800; color:var(--primary);">' + out.toLocaleString('vi-VN') + '</td>'
+      + '<td style="text-align:right; color:var(--text-secondary);">' + tgt.toLocaleString('vi-VN') + '</td>'
+      + '<td style="text-align:center; font-weight:700; ' + compRateColor + '">' + compRate.toFixed(1) + '%</td>'
+      + '<td style="text-align:center;">' + hrs.toFixed(1) + 'h</td>'
+      + '<td style="text-align:center;">' + reworkBadge + '</td>'
+      + '<td style="text-align:center; font-weight:700;">' + acc.toFixed(1) + '%</td>'
+      + '<td style="font-size:12px; color:var(--text-secondary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + note.replace(/"/g, '&quot;') + '">' + (note || '--') + '</td>'
+      + '<td style="text-align:center;">'
+      + '<button class="btn btn-danger btn-sm" onclick="confirmDeleteDailyLog(\'' + safeLogId + '\', \'' + rowDateDisplay + '\', \'' + safeMemberName + '\', ' + out + ')" title="Xóa bản ghi này nếu người dùng nhập nhầm" style="padding:4px 9px; font-size:11.5px; font-weight:700; border-radius:6px; display:inline-flex; align-items:center; gap:4px;">'
+      + '🗑️ Xóa</button>'
+      + '</td>'
+      + '</tr>';
+  }
+
+  tbody.innerHTML = html;
+  if (countEl) {
+    countEl.innerHTML = 'Hiển thị <strong>' + logs.length + '</strong> bản ghi nhật ký | Tổng sản lượng: <strong style="color:var(--primary);">' + totalOutput.toLocaleString('vi-VN') + ' Cuboid</strong>';
+  }
+}
+
+/**
+ * Hộp thoại xác nhận và tiến hành xóa bản ghi nhập nhầm
+ * @param {string} logId
+ * @param {string} dateStr
+ * @param {string} memberName
+ * @param {number} output
+ */
+function confirmDeleteDailyLog(logId, dateStr, memberName, output) {
+  var msg = '⚠️ BẠN CÓ CHẮC CHẮN MUỐN XÓA BẢN GHI NHẬP SỐ LIỆU NÀY KHÔNG?\n\n'
+    + '• Ngày: ' + dateStr + '\n'
+    + '• Thành viên: ' + memberName + '\n'
+    + '• Sản lượng: ' + output.toLocaleString('vi-VN') + ' Cuboid\n\n'
+    + '👉 Bản ghi này sẽ bị xóa khỏi Google Sheet và hệ thống sẽ tự động cập nhật lại KPI!';
+
+  if (!confirm(msg)) return;
+
+  showLoading('Đang xóa bản ghi nhật ký...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.success) {
+        showToast(res.message, 'success');
+        // Tải lại danh sách lịch sử
+        loadDailyLogsHistory(true);
+        // Tự động làm mới Dashboard nếu đang ở tab Dashboard
+        if (AppState.activeTab === 'dashboard') {
+          loadDashboardData();
+        }
+      } else {
+        showToast((res && res.message) ? res.message : 'Không thể xóa bản ghi!', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi khi xóa bản ghi: ' + err.message, 'error');
+    })
+    .deleteDailyLog(logId);
+}
+
+// ============================================================================
+// 6. GHI LỖI & QUẢN LÝ LỖI (DÀNH CHO QC & TEAM ANNOTATION)
+// ============================================================================
+
+AppState.currentErrorsList = [];
+AppState.viewingErrorId = null;
+
+function submitNewErrorLog() {
+  var memberSelect = document.getElementById('errorMemberSelect');
+  var memberId = memberSelect ? memberSelect.value : '';
+  var qcSelect = document.getElementById('errorQcSelect');
+  var createdBy = qcSelect ? qcSelect.value.trim() : '';
+  var taskId = document.getElementById('errorTaskId') ? document.getElementById('errorTaskId').value.trim() : '';
+  var date = document.getElementById('errorDate').value;
+  var desc = document.getElementById('errorDesc') ? document.getElementById('errorDesc').value.trim() : '';
+
+  if (!memberId) {
+    showToast('Vui lòng chọn thành viên vi phạm lỗi!', 'warning');
+    return;
+  }
+  if (!createdBy) {
+    showToast('Vui lòng chọn Người ghi (QC)!', 'warning');
+    return;
+  }
+  if (!desc) {
+    showToast('Vui lòng nhập nội dung mô tả chi tiết lỗi!', 'warning');
+    return;
+  }
+
+  var memObj = (AppState.members || []).find(function(m) { 
+    return m.MemberID === memberId; 
+  });
+  var memberName = memObj ? memObj.FullName : memberId;
+
+  var projectId = 'PRJ_3D_LIDAR';
+
+  var errData = {
+    MemberID: memberId,
+    MemberName: memberName,
+    CreatedBy: createdBy,
+    ProjectID: projectId,
+    TaskId: taskId,
+    Date: date,
+    Description: desc
+  };
+
+  showLoading('Đang lưu thông tin lỗi...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+      document.getElementById('errorTaskId').value = '';
+      document.getElementById('errorDesc').value = '';
+      loadErrorLogsTable();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi ghi nhận lỗi: ' + err.message, 'error');
+    })
+    .saveErrorLog(errData);
+}
+
+function loadErrorLogsTable() {
+  var fromDate = document.getElementById('errFilterFrom') ? document.getElementById('errFilterFrom').value : '';
+  var toDate = document.getElementById('errFilterTo') ? document.getElementById('errFilterTo').value : '';
+  var mem = document.getElementById('errFilterMember') ? document.getElementById('errFilterMember').value : '';
+  var qc = document.getElementById('errFilterQC') ? document.getElementById('errFilterQC').value : '';
+  var status = document.getElementById('errFilterStatus') ? document.getElementById('errFilterStatus').value : '';
+
+  showLoading('Đang tải danh sách lỗi...');
+  google.script.run
+    .withSuccessHandler(function(errors) {
+      hideLoading();
+      AppState.currentErrorsList = errors || [];
+      renderErrorLogsTable(errors);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi tải danh sách lỗi: ' + err.message, 'error');
+    })
+    .getErrorLogs(fromDate, toDate, mem, '', status, qc);
+}
+
+function renderErrorLogsTable(errors) {
+  var tbody = document.getElementById('errorLogsTableBody');
+  if (!tbody) return;
+
+  if (!errors || errors.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:36px;">Chưa có lỗi nào được ghi nhận hoặc không khớp bộ lọc!</td></tr>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < errors.length; i++) {
+    var e = errors[i];
+    var isFixed = (e.Status === 'Đã sửa');
+    var statusBadge = isFixed 
+      ? '<span class="badge" style="background:#10b981;color:#fff;">✅ Đã sửa</span>'
+      : '<span class="badge" style="background:#f59e0b;color:#000;">⏳ Đang chờ</span>';
+
+    // Các nút hành động: Xem chi tiết, Đã sửa, Đang chờ, Xóa lỗi
+    var actionsHtml = '<button class="btn btn-primary btn-sm" onclick="openErrorDetailModal(\'' + e.ErrorID + '\')">📄 Xem chi tiết</button> ';
+    
+    if (!isFixed) {
+      actionsHtml += '<button class="btn btn-success btn-sm" onclick="changeErrorStatus(\'' + e.ErrorID + '\', \'Đã sửa\')">Đã sửa</button> ';
+    } else {
+      actionsHtml += '<button class="btn btn-secondary btn-sm" onclick="changeErrorStatus(\'' + e.ErrorID + '\', \'Đang chờ\')">Chờ sửa</button> ';
+    }
+
+    actionsHtml += '<button class="btn btn-danger btn-sm" onclick="deleteErrorRecord(\'' + e.ErrorID + '\')">🗑️ Xóa</button>';
+
+    html += '<tr>'
+      + '<td>' + e.Date + '</td>'
+      + '<td><strong>' + e.MemberName + '</strong></td>'
+      + '<td><span style="font-weight:600;color:var(--primary);">' + (e.TaskId || '-') + '</span></td>'
+      + '<td>' + statusBadge + '</td>'
+      + '<td>' + (e.CreatedBy || 'QC') + '</td>'
+      + '<td>' + actionsHtml + '</td>'
+      + '</tr>';
+  }
+
+  tbody.innerHTML = html;
+}
+
+// Modal Xem Chi Tiết Lỗi (Không giới hạn từ ngữ, có chế độ Sửa)
+function openErrorDetailModal(errId) {
+  var err = (AppState.currentErrorsList || []).find(function(item) {
+    return item.ErrorID === errId;
+  });
+  if (!err) return;
+
+  AppState.viewingErrorId = errId;
+
+  // Đảm bảo mở ở chế độ Xem (View Mode)
+  var viewMode = document.getElementById('errorDetailViewMode');
+  var editMode = document.getElementById('errorDetailEditMode');
+  if (viewMode) viewMode.style.display = 'block';
+  if (editMode) editMode.style.display = 'none';
+
+  document.getElementById('modalErrorTitle').innerText = '📄 Chi Tiết Lỗi: ' + (err.TaskId || err.ErrorID);
+  document.getElementById('modalErrorMember').innerText = err.MemberName || '--';
+  document.getElementById('modalErrorTask').innerText = err.TaskId || '--';
+  document.getElementById('modalErrorDate').innerText = err.Date || '--';
+  document.getElementById('modalErrorQC').innerText = err.CreatedBy || 'QC';
+  
+  var isFixed = (err.Status === 'Đã sửa');
+  document.getElementById('modalErrorStatus').innerHTML = isFixed 
+    ? '<span class="badge" style="background:#10b981;color:#fff;">✅ Đã sửa</span>'
+    : '<span class="badge" style="background:#f59e0b;color:#000;">⏳ Đang chờ</span>';
+
+  // Hiển thị nội dung mô tả đầy đủ không giới hạn số từ
+  document.getElementById('modalErrorDesc').innerText = err.Description || '(Không có mô tả chi tiết)';
+
+  var modal = document.getElementById('errorDetailModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    setTimeout(function() {
+      modal.classList.add('show');
+    }, 10);
+  }
+}
+
+// Chuyển sang chế độ Sửa lỗi ngay trong Modal
+function switchErrorModalToEditMode() {
+  var errId = AppState.viewingErrorId;
+  if (!errId) return;
+
+  var err = (AppState.currentErrorsList || []).find(function(item) {
+    return item.ErrorID === errId;
+  });
+  if (!err) return;
+
+  // 1. Điền danh sách thành viên vào dropdown chọn thành viên vi phạm
+  var memSel = document.getElementById('modalEditMember');
+  if (memSel) {
+    var memHtml = '';
+    var members = AppState.members || [];
+    for (var i = 0; i < members.length; i++) {
+      var m = members[i];
+      memHtml += '<option value="' + m.MemberID + '">' + m.FullName + ' (' + (m.Role || 'Annotator') + ')</option>';
+    }
+    memSel.innerHTML = memHtml;
+    if (err.MemberID) {
+      memSel.value = err.MemberID;
+    }
+  }
+
+  // 2. Điền danh sách Người ghi (QC) vào dropdown
+  var qcSel = document.getElementById('modalEditQC');
+  if (qcSel) {
+    var qcHtml = '<option value="">-- Chọn Người ghi (QC) --</option>';
+    var members = AppState.members || [];
+    for (var j = 0; j < members.length; j++) {
+      var mq = members[j];
+      var roleTag = mq.Role ? ' (' + mq.Role + ')' : '';
+      qcHtml += '<option value="' + mq.FullName + '">' + mq.FullName + roleTag + '</option>';
+    }
+    qcSel.innerHTML = qcHtml;
+    if (err.CreatedBy) {
+      qcSel.value = err.CreatedBy;
+    }
+  }
+
+  // 3. Điền các trường dữ liệu hiện tại
+  if (document.getElementById('modalEditTask')) {
+    document.getElementById('modalEditTask').value = err.TaskId || '';
+  }
+  if (document.getElementById('modalEditDate')) {
+    document.getElementById('modalEditDate').value = err.Date || '';
+  }
+  if (document.getElementById('modalEditStatus')) {
+    document.getElementById('modalEditStatus').value = err.Status || 'Đang chờ';
+  }
+  if (document.getElementById('modalEditDesc')) {
+    document.getElementById('modalEditDesc').value = err.Description || '';
+  }
+
+  // 4. Đổi tiêu đề và hiển thị form chỉnh sửa
+  document.getElementById('modalErrorTitle').innerText = '✏️ Chỉnh Sửa Lỗi: ' + (err.TaskId || err.ErrorID);
+  var viewMode = document.getElementById('errorDetailViewMode');
+  var editMode = document.getElementById('errorDetailEditMode');
+  if (viewMode) viewMode.style.display = 'none';
+  if (editMode) editMode.style.display = 'block';
+}
+
+// Hủy chỉnh sửa, quay lại View Mode
+function cancelErrorModalEdit() {
+  var errId = AppState.viewingErrorId;
+  var err = (AppState.currentErrorsList || []).find(function(item) {
+    return item.ErrorID === errId;
+  });
+
+  if (document.getElementById('modalErrorTitle') && err) {
+    document.getElementById('modalErrorTitle').innerText = '📄 Chi Tiết Lỗi: ' + (err.TaskId || err.ErrorID);
+  }
+  var viewMode = document.getElementById('errorDetailViewMode');
+  var editMode = document.getElementById('errorDetailEditMode');
+  if (viewMode) viewMode.style.display = 'block';
+  if (editMode) editMode.style.display = 'none';
+}
+
+// Lưu thông tin lỗi đã chỉnh sửa lên Google Sheet
+function saveEditedErrorLog() {
+  var errId = AppState.viewingErrorId;
+  if (!errId) return;
+
+  var memberId = document.getElementById('modalEditMember') ? document.getElementById('modalEditMember').value : '';
+  var qcName = document.getElementById('modalEditQC') ? document.getElementById('modalEditQC').value.trim() : '';
+  var taskId = document.getElementById('modalEditTask') ? document.getElementById('modalEditTask').value.trim() : '';
+  var date = document.getElementById('modalEditDate') ? document.getElementById('modalEditDate').value : '';
+  var status = document.getElementById('modalEditStatus') ? document.getElementById('modalEditStatus').value : 'Đang chờ';
+  var desc = document.getElementById('modalEditDesc') ? document.getElementById('modalEditDesc').value.trim() : '';
+
+  if (!memberId) {
+    showToast('Vui lòng chọn thành viên vi phạm!', 'warning');
+    return;
+  }
+  if (!qcName) {
+    showToast('Vui lòng chọn Người ghi (QC)!', 'warning');
+    return;
+  }
+  if (!desc) {
+    showToast('Vui lòng nhập nội dung mô tả chi tiết lỗi!', 'warning');
+    return;
+  }
+
+  var memObj = (AppState.members || []).find(function(m) { 
+    return m.MemberID === memberId; 
+  });
+  var memberName = memObj ? memObj.FullName : memberId;
+
+  var updateData = {
+    ErrorID: errId,
+    MemberID: memberId,
+    MemberName: memberName,
+    CreatedBy: qcName,
+    TaskId: taskId,
+    Date: date,
+    Status: status,
+    Description: desc
+  };
+
+  showLoading('Đang lưu cập nhật lỗi...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+
+      // Cập nhật lại bản ghi trong danh sách bộ nhớ tạm
+      var currentErr = (AppState.currentErrorsList || []).find(function(item) { 
+        return item.ErrorID === errId; 
+      });
+      if (currentErr) {
+        currentErr.MemberID = memberId;
+        currentErr.MemberName = memberName;
+        currentErr.CreatedBy = qcName;
+        currentErr.TaskId = taskId;
+        currentErr.Date = date;
+        currentErr.Status = status;
+        currentErr.Description = desc;
+      }
+
+      // Làm mới bảng danh sách lỗi ở phía sau
+      loadErrorLogsTable();
+
+      // Cập nhật lại hiển thị trong View Mode
+      openErrorDetailModal(errId);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi lưu cập nhật: ' + err.message, 'error');
+    })
+    .updateErrorLog(updateData);
+}
+
+function closeErrorDetailModal() {
+  var modal = document.getElementById('errorDetailModal');
+  if (modal) {
+    modal.classList.remove('show');
+    setTimeout(function() {
+      modal.style.display = 'none';
+    }, 200);
+  }
+  AppState.viewingErrorId = null;
+}
+
+function setModalErrorStatus(newStatus) {
+  if (!AppState.viewingErrorId) return;
+  changeErrorStatus(AppState.viewingErrorId, newStatus, function() {
+    closeErrorDetailModal();
+  });
+}
+
+function deleteModalError() {
+  if (!AppState.viewingErrorId) return;
+  deleteErrorRecord(AppState.viewingErrorId, function() {
+    closeErrorDetailModal();
+  });
+}
+
+function changeErrorStatus(errId, newStatus, callback) {
+  showLoading('Đang cập nhật trạng thái lỗi...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+      loadErrorLogsTable();
+      if (callback) callback();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi: ' + err.message, 'error');
+    })
+    .updateErrorStatus(errId, newStatus);
+}
+
+function deleteErrorRecord(errId, callback) {
+  if (!confirm('Bạn có chắc chắn muốn xóa bản ghi lỗi này khỏi hệ thống?')) return;
+
+  showLoading('Đang xóa bản ghi lỗi...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+      loadErrorLogsTable();
+      if (callback) callback();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi xóa: ' + err.message, 'error');
+    })
+    .deleteErrorLog(errId);
+}
+
+// ============================================================================
+// 7. BẢNG XẾP HẠNG & HUY HIỆU (RANKINGS & BADGES)
+// ============================================================================
+
+var currentRankData = null;
+
+function loadRankingsData() {
+  var rankWeekSel = document.getElementById('rankWeekSelect');
+  var selectedWeekFrom = rankWeekSel ? rankWeekSel.value : '';
+  var criterion = document.getElementById('rankCriterionSelect') ? document.getElementById('rankCriterionSelect').value : 'COMPOSITE';
+
+  showLoading('Đang tính toán Bảng xếp hạng...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || !res.success) {
+        showToast('Không thể tải Bảng xếp hạng!', 'error');
+        return;
+      }
+      currentRankData = res;
+      renderRankingsTable(res);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi tính xếp hạng: ' + err.message, 'error');
+    })
+    .getRankingDetails('WEEK', selectedWeekFrom, criterion);
+}
+
+function renderRankingsTable(data) {
+  var tbody = document.getElementById('rankingsTableBody');
+  var rangeEl = document.getElementById('rankDisplayRange');
+  if (rangeEl) rangeEl.innerText = 'Kỳ: ' + data.displayRange;
+
+  // Hiển thị thông báo nếu đang áp dụng xếp hạng tùy chỉnh
+  var noticeEl = document.getElementById('rankCustomNotice');
+  if (noticeEl) {
+    noticeEl.style.display = data.isCustomRanked ? 'inline-block' : 'none';
+  }
+
+  // Quản lý hiển thị nút lưu thứ hạng cho Team Lead / QC / Admin
+  var canEditRank = (AppState.currentUser && (
+    AppState.currentUser.role === 'Team Lead' || 
+    AppState.currentUser.role === 'ADMIN' || 
+    AppState.currentUser.role === 'Annotator + QC'
+  ));
+  var btnSave = document.getElementById('btnSaveAdminRank');
+  var btnReset = document.getElementById('btnResetAdminRank');
+  if (btnSave) {
+    btnSave.style.display = canEditRank ? 'inline-flex' : 'none';
+    btnSave.innerHTML = '💾 Lưu Thứ Hạng (Team Lead)';
+    btnSave.classList.remove('pulse-highlight');
+  }
+  if (btnReset) btnReset.style.display = (canEditRank && data.isCustomRanked) ? 'inline-flex' : 'none';
+
+  if (!tbody) return;
+
+  if (!data.rankings || data.rankings.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">Không có dữ liệu xếp hạng trong kỳ này.</td></tr>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < data.rankings.length; i++) {
+    var r = data.rankings[i];
+
+    // Cột Hạng: Icon huy chương cho Top 3
+    var medal = (r.rank === 1 ? '🥇 ' : r.rank === 2 ? '🥈 ' : r.rank === 3 ? '🥉 ' : '');
+    var rankContent = '<span class="rank-num-badge" style="font-weight:800;font-size:15px;">' + medal + r.rank + '</span>';
+    var dragHandleHtml = canEditRank ? '<span class="drag-handle" title="Kéo thả dòng để thay đổi thứ hạng">⠿</span>' : '';
+    var rowDraggable = canEditRank ? ' draggable="true" class="draggable-row"' : '';
+
+    // Cột Biến động so với tuần trước
+    var diffHtml = '';
+    if (r.hasPrevRank === false || r.rankDiff === null || r.rankDiff === undefined) {
+      diffHtml = '<span class="badge" style="background:rgba(59,130,246,0.12);color:var(--primary);font-weight:700;font-size:11px;padding:3px 7px;border-radius:6px;">Mới ⭐</span>';
+    } else if (r.rankDiff > 0) {
+      diffHtml = '<span style="color:var(--success);font-weight:800;font-size:13px;">▲ +' + r.rankDiff + '</span>'
+        + ' <span style="font-size:11px;color:var(--text-muted);">(Hạng ' + r.prevRank + ')</span>';
+    } else if (r.rankDiff < 0) {
+      diffHtml = '<span style="color:var(--danger);font-weight:800;font-size:13px;">▼ ' + r.rankDiff + '</span>'
+        + ' <span style="font-size:11px;color:var(--text-muted);">(Hạng ' + r.prevRank + ')</span>';
+    } else {
+      diffHtml = '<span style="color:var(--text-muted);font-weight:700;">-</span>'
+        + ' <span style="font-size:11px;color:var(--text-muted);">(Hạng ' + r.prevRank + ')</span>';
+    }
+
+    // Huy hiệu & Danh hiệu
+    var badgesHtml = '';
+    if (r.badges && r.badges.length > 0) {
+      for (var b = 0; b < r.badges.length; b++) {
+        var bg = r.badges[b];
+        badgesHtml += '<span class="badge ' + bg.class + '" style="margin-right:4px;display:inline-block;margin-bottom:2px;">' + bg.icon + ' ' + bg.text + '</span>';
+      }
+    }
+
+    var isMe = (r.memberId === AppState.currentUser.id);
+    var rowStyle = isMe ? 'background-color:rgba(59, 130, 246, 0.1);font-weight:600;' : '';
+
+    html += '<tr data-id="' + r.memberId + '" data-rank="' + r.rank + '"' + rowDraggable + ' style="' + rowStyle + '">'
+      + '<td style="text-align:center;white-space:nowrap;">' + dragHandleHtml + rankContent + '</td>'
+      + '<td>' + diffHtml + '</td>'
+      + '<td class="col-member-name" style="cursor:' + (canEditRank ? 'grab' : 'default') + ';"><strong>' + r.memberName + '</strong> ' + (isMe ? '<span style="color:var(--primary);">(Bạn)</span>' : '') + '</td>'
+      + '<td><strong>' + r.output.toLocaleString('vi-VN') + '</strong></td>'
+      + '<td>' + r.targetCompletionRate + '%</td>'
+      + '<td>' + r.accuracy + '%</td>'
+      + '<td>' + r.productivity + '</td>'
+      + '<td class="col-badges">' + badgesHtml + '</td>'
+      + '</tr>';
+  }
+
+  tbody.innerHTML = html;
+
+  if (canEditRank) {
+    attachRankingDragAndDrop();
+  }
+}
+
+/**
+ * Gán sự kiện Kéo Thả (Drag & Drop) cho các hàng trong bảng xếp hạng
+ */
+function attachRankingDragAndDrop() {
+  var tbody = document.getElementById('rankingsTableBody');
+  if (!tbody) return;
+
+  var rows = tbody.querySelectorAll('tr.draggable-row');
+  var draggedRow = null;
+
+  rows.forEach(function(row) {
+    row.addEventListener('dragstart', function(e) {
+      draggedRow = this;
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try {
+        e.dataTransfer.setData('text/plain', this.getAttribute('data-id') || '');
+      } catch (err) {}
+    });
+
+    row.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (!draggedRow || draggedRow === this) return;
+
+      var rect = this.getBoundingClientRect();
+      var offset = e.clientY - rect.top;
+      if (offset < rect.height / 2) {
+        this.classList.add('drag-over-top');
+        this.classList.remove('drag-over-bottom');
+      } else {
+        this.classList.add('drag-over-bottom');
+        this.classList.remove('drag-over-top');
+      }
+    });
+
+    row.addEventListener('dragleave', function() {
+      this.classList.remove('drag-over-top');
+      this.classList.remove('drag-over-bottom');
+    });
+
+    row.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!draggedRow || draggedRow === this) return;
+
+      var rect = this.getBoundingClientRect();
+      var offset = e.clientY - rect.top;
+      if (offset < rect.height / 2) {
+        tbody.insertBefore(draggedRow, this);
+      } else {
+        tbody.insertBefore(draggedRow, this.nextSibling);
+      }
+
+      this.classList.remove('drag-over-top');
+      this.classList.remove('drag-over-bottom');
+      updateRankNumbersAfterDrag();
+    });
+
+    row.addEventListener('dragend', function() {
+      draggedRow = null;
+      rows.forEach(function(r) {
+        r.classList.remove('dragging');
+        r.classList.remove('drag-over-top');
+        r.classList.remove('drag-over-bottom');
+      });
+    });
+  });
+}
+
+/**
+ * Cập nhật lại số thứ hạng (1, 2, 3...) và huy chương trên giao diện sau khi kéo thả
+ */
+function updateRankNumbersAfterDrag() {
+  var tbody = document.getElementById('rankingsTableBody');
+  if (!tbody) return;
+
+  var rows = tbody.querySelectorAll('tr[data-id]');
+  rows.forEach(function(row, idx) {
+    var newRank = idx + 1;
+    row.setAttribute('data-rank', newRank);
+
+    var badge = row.querySelector('.rank-num-badge');
+    if (badge) {
+      var medal = (newRank === 1 ? '🥇 ' : newRank === 2 ? '🥈 ' : newRank === 3 ? '🥉 ' : '');
+      badge.innerHTML = medal + newRank;
+    }
+  });
+
+  // Highlight nút lưu
+  var btnSave = document.getElementById('btnSaveAdminRank');
+  if (btnSave) {
+    btnSave.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.7)';
+    btnSave.innerHTML = '💾 Lưu Thứ Hạng (Đã thay đổi*)';
+  }
+}
+
+/**
+ * Team Lead / Admin lưu thứ hạng tùy chỉnh sau khi kéo thả
+ */
+function saveAdminCustomRankings() {
+  if (!currentRankData || !currentRankData.periodKey) {
+    showToast('Chưa có thông tin kỳ xếp hạng để lưu!', 'error');
+    return;
+  }
+
+  var rows = document.querySelectorAll('#rankingsTableBody tr[data-id]');
+  if (!rows || rows.length === 0) {
+    showToast('Không tìm thấy danh sách thành viên trong bảng xếp hạng!', 'warning');
+    return;
+  }
+
+  var rankMap = {};
+  rows.forEach(function(tr, idx) {
+    var mId = tr.getAttribute('data-id');
+    if (mId) {
+      rankMap[mId] = idx + 1;
+    }
+  });
+
+  showLoading('Đang lưu thứ hạng cho ' + (currentRankData.periodLabel || 'kỳ xếp hạng') + '...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.success) {
+        showToast('Đã lưu thứ hạng tùy chỉnh thành công!', 'success');
+        var btnSave = document.getElementById('btnSaveAdminRank');
+        if (btnSave) {
+          btnSave.style.boxShadow = '';
+          btnSave.innerHTML = '💾 Lưu Thứ Hạng (Team Lead)';
+        }
+        loadRankingsData();
+      } else {
+        showToast(res ? res.message : 'Lỗi khi lưu thứ hạng!', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi lưu thứ hạng: ' + err.message, 'error');
+    })
+    .saveCustomRankings(currentRankData.periodKey, rankMap);
+}
+
+/**
+ * Team Lead / Admin khôi phục lại thứ hạng tự động tính toán
+ */
+function resetAdminCustomRankings() {
+  if (!currentRankData || !currentRankData.periodKey) return;
+
+  if (!confirm('Bạn có chắc muốn xóa thứ hạng tùy chỉnh và khôi phục xếp hạng tự động theo hiệu suất không?')) {
+    return;
+  }
+
+  showLoading('Đang khôi phục thứ hạng tự động...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.success) {
+        showToast('Đã khôi phục thứ hạng tự động thành công!', 'success');
+        var btnSave = document.getElementById('btnSaveAdminRank');
+        if (btnSave) {
+          btnSave.style.boxShadow = '';
+          btnSave.innerHTML = '💾 Lưu Thứ Hạng (Team Lead)';
+        }
+        loadRankingsData();
+      } else {
+        showToast(res ? res.message : 'Lỗi khi khôi phục!', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi khôi phục: ' + err.message, 'error');
+    })
+    .saveCustomRankings(currentRankData.periodKey, {});
+}
+
+// ============================================================================
+// 8. BÁO CÁO NGÀY & TUẦN ĐỘC LẬP (REPORTS)
+// ============================================================================
+
+var currentReportPeriodMode = 'WEEK'; // 'WEEK' hoặc 'DAY'
+var currentReportData = null;
+var currentWeeklyReportData = null; // Alias tương thích ngược
+
+/**
+ * Chuyển đổi giữa chế độ Báo Cáo Tuần và Báo Cáo Ngày
+ * @param {string} mode 'WEEK' | 'DAY'
+ */
+function switchReportPeriodMode(mode) {
+  currentReportPeriodMode = mode;
+
+  var btnWeek = document.getElementById('btnReportModeWeek');
+  var btnDay = document.getElementById('btnReportModeDay');
+  var weekGroup = document.getElementById('reportWeekGroup');
+  var dateGroup = document.getElementById('reportDateGroup');
+  var dayTrendSec = document.getElementById('rptDayTrendSection');
+  var tableTitle = document.getElementById('rptMembersTableTitle');
+  var noteLabel = document.getElementById('rptManagerNoteLabel');
+  var planLabel = document.getElementById('rptNextPlanLabel');
+
+  if (mode === 'WEEK') {
+    if (btnWeek) {
+      btnWeek.style.background = 'var(--primary)';
+      btnWeek.style.color = '#fff';
+    }
+    if (btnDay) {
+      btnDay.style.background = 'rgba(255,255,255,0.05)';
+      btnDay.style.color = 'var(--text-secondary)';
+    }
+    if (weekGroup) weekGroup.style.display = 'flex';
+    if (dateGroup) dateGroup.style.display = 'none';
+    if (dayTrendSec) dayTrendSec.style.display = 'block';
+    if (tableTitle) tableTitle.innerText = '👥 Báo Cáo Chi Tiết Từng Thành Viên Trong Tuần';
+    if (noteLabel) noteLabel.innerText = 'Nhận xét chung của Quản lý / Team Lead:';
+    if (planLabel) planLabel.innerText = 'Mục tiêu & Kế hoạch tuần tới:';
+  } else {
+    if (btnDay) {
+      btnDay.style.background = 'var(--primary)';
+      btnDay.style.color = '#fff';
+    }
+    if (btnWeek) {
+      btnWeek.style.background = 'rgba(255,255,255,0.05)';
+      btnWeek.style.color = 'var(--text-secondary)';
+    }
+    if (weekGroup) weekGroup.style.display = 'none';
+    if (dateGroup) dateGroup.style.display = 'flex';
+    if (dayTrendSec) dayTrendSec.style.display = 'none';
+    if (tableTitle) tableTitle.innerText = '👥 Báo Cáo Chi Tiết Từng Thành Viên Trong Ngày';
+    if (noteLabel) noteLabel.innerText = 'Nhận xét điều hành trong ngày:';
+    if (planLabel) planLabel.innerText = 'Kế hoạch công việc ngày tiếp theo:';
+
+    var dateInput = document.getElementById('reportDateSelect');
+    if (dateInput && !dateInput.value) {
+      var today = new Date();
+      var yyyy = today.getFullYear();
+      var mm = String(today.getMonth() + 1).padStart(2, '0');
+      var dd = String(today.getDate()).padStart(2, '0');
+      dateInput.value = yyyy + '-' + mm + '-' + dd;
+    }
+  }
+
+  loadReportData();
+}
+
+/**
+ * Tải dữ liệu báo cáo tùy theo chế độ đang chọn (Tuần hoặc Ngày)
+ */
+function loadReportData() {
+  if (currentReportPeriodMode === 'WEEK') {
+    var weekSelect = document.getElementById('reportWeekSelect');
+    var weekVal = weekSelect ? weekSelect.value : '';
+
+    showLoading('Đang sinh Báo cáo tuần độc lập...');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        hideLoading();
+        if (!res || !res.success) {
+          showToast('Không thể tạo báo cáo tuần!', 'error');
+          return;
+        }
+        currentReportData = res;
+        currentWeeklyReportData = res;
+        renderReportView(res);
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Lỗi tạo báo cáo tuần: ' + err.message, 'error');
+      })
+      .generateWeeklyReportDetails(weekVal);
+  } else {
+    var dateInput = document.getElementById('reportDateSelect');
+    var dateVal = dateInput ? dateInput.value : '';
+    if (!dateVal) {
+      var now = new Date();
+      var yyyy = now.getFullYear();
+      var mm = String(now.getMonth() + 1).padStart(2, '0');
+      var dd = String(now.getDate()).padStart(2, '0');
+      dateVal = yyyy + '-' + mm + '-' + dd;
+      if (dateInput) dateInput.value = dateVal;
+    }
+
+    showLoading('Đang sinh Báo cáo nghiệm thu ngày ' + dateVal + '...');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        hideLoading();
+        if (!res || !res.success) {
+          showToast('Không thể tạo báo cáo ngày!', 'error');
+          return;
+        }
+        currentReportData = res;
+        currentWeeklyReportData = res;
+        renderReportView(res);
+      })
+      .withFailureHandler(function(err) {
+        hideLoading();
+        showToast('Lỗi tạo báo cáo ngày: ' + err.message, 'error');
+      })
+      .generateDailyReportDetails(dateVal);
+  }
+}
+
+/**
+ * Wrapper tương thích ngược cho switchTab('reports')
+ */
+function loadWeeklyReportTab() {
+  loadReportData();
+}
+
+/**
+ * Hiển thị dữ liệu lên giao diện Báo Cáo
+ * @param {Object} data Dữ liệu trả về từ server
+ */
+function renderReportView(data) {
+  var titleEl = document.getElementById('reportWeekTitle');
+  if (titleEl) titleEl.innerText = data.title;
+
+  // 1. Thống kê tổng quan 4 thẻ KPI
+  var ov = data.overview;
+  var cmp = data.comparison;
+  var targetDiffStr = (cmp && cmp.targetRate && cmp.targetRate.diff !== undefined)
+    ? ' (' + (cmp.targetRate.diff >= 0 ? '+' : '') + cmp.targetRate.diff + '%)'
+    : '';
+
+  var totalRwk = ov.totalRework !== undefined ? ov.totalRework : (ov.totalErrorCount || 0);
+
+  document.getElementById('rptTotalOutput').innerText = ov.totalOutput.toLocaleString('vi-VN');
+  document.getElementById('rptTargetRate').innerText = ov.targetCompletionRate + '%' + targetDiffStr;
+  document.getElementById('rptAccuracy').innerText = ov.accuracyRate + '%';
+  document.getElementById('rptTotalErrors').innerText = totalRwk;
+
+  // 2. Bảng Chi Tiết Từng Thành Viên
+  var memBody = document.getElementById('rptMembersDetailBody');
+  if (memBody && data.rankings) {
+    var mHtml = '';
+    for (var m = 0; m < data.rankings.length; m++) {
+      var rk = data.rankings[m];
+      var statusBadge = '';
+      if (rk.targetCompletionRate >= 100 && rk.accuracy >= 96) {
+        statusBadge = '<span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;">Xuất sắc</span>';
+      } else if (rk.targetCompletionRate >= 85) {
+        statusBadge = '<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;">Đạt yêu cầu</span>';
+      } else {
+        statusBadge = '<span class="badge" style="background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;">Dưới định mức</span>';
+      }
+
+      var medal = (rk.rank === 1 ? '🥇 ' : rk.rank === 2 ? '🥈 ' : rk.rank === 3 ? '🥉 ' : '');
+      var reworkVal = (rk.rework !== undefined) ? rk.rework : (rk.errorCount || 0);
+
+      // Badge Chuyên cần
+      var attVal = rk.attendance || '--';
+      var attTooltip = rk.attendanceTooltip ? (' title="' + rk.attendanceTooltip.replace(/"/g, '&quot;') + '"') : '';
+      var attBadgeStyle = 'background:var(--bg-elevated);color:var(--text-secondary);';
+      
+      if (rk.attendanceRate !== undefined) {
+        if (rk.attendanceRate >= 100) {
+          attBadgeStyle = 'background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;';
+        } else if (rk.attendanceRate >= 80) {
+          attBadgeStyle = 'background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;';
+        } else {
+          attBadgeStyle = 'background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;';
+        }
+      } else if (attVal === 'Có mặt') {
+        attBadgeStyle = 'background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;';
+      } else if (attVal.indexOf('Nghỉ') !== -1 || attVal === 'Vắng mặt') {
+        attBadgeStyle = 'background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;';
+      }
+
+      var attCellHtml = '<td style="text-align:center;"><span class="badge" style="' + attBadgeStyle + 'cursor:help;"' + attTooltip + '>' + attVal + '</span></td>';
+
+      var reworkCellHtml = '<input type="number" min="0" class="rework-inline-input" '
+        + 'value="' + reworkVal + '" '
+        + 'data-index="' + m + '" '
+        + 'data-member-id="' + rk.memberId + '" '
+        + 'onfocus="this.select()" '
+        + 'onchange="handleReportReworkChange(this, ' + m + ')" '
+        + 'title="Click để nhập số lần Rework" '
+        + 'style="width:58px;height:30px;text-align:center;font-weight:800;font-size:13px;border-radius:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:' + (reworkVal > 0 ? '#ef4444' : 'var(--text-muted)') + ';cursor:pointer;">';
+
+      mHtml += '<tr>'
+        + '<td style="text-align:center;font-weight:800;">' + medal + rk.rank + '</td>'
+        + '<td><strong>' + rk.memberName + '</strong></td>'
+        + '<td><span class="badge" style="background:var(--bg-elevated);color:var(--text-secondary);">' + (rk.role || 'Annotator') + '</span></td>'
+        + attCellHtml
+        + '<td style="text-align:right;font-weight:800;color:var(--primary);">' + rk.output.toLocaleString('vi-VN') + '</td>'
+        + '<td style="text-align:right;">' + rk.target.toLocaleString('vi-VN') + '</td>'
+        + '<td style="text-align:center;font-weight:700;' + (rk.targetCompletionRate >= 100 ? 'color:var(--success);' : (rk.targetCompletionRate < 85 ? 'color:var(--danger);' : '')) + '">' + rk.targetCompletionRate + '%</td>'
+        + '<td style="text-align:center;font-weight:700;" id="rptAccCell_' + m + '">' + rk.accuracy + '%</td>'
+        + '<td style="text-align:center;">' + (rk.hours ? rk.hours.toFixed(1) : '0') + 'h</td>'
+        + '<td style="text-align:center;font-weight:600;">' + rk.productivity + '</td>'
+        + '<td style="text-align:center;">' + reworkCellHtml + '</td>'
+        + '<td style="text-align:center;" id="rptEvalCell_' + m + '">' + statusBadge + '</td>'
+        + '</tr>';
+    }
+    memBody.innerHTML = mHtml;
+  }
+
+  // 3. Bảng Phân Tích Nguyên Nhân Rework / Lỗi Hàng Đầu (Pareto 80/20)
+  var errBody = document.getElementById('rptTopErrorsBody');
+  if (errBody) {
+    if (data.topErrors && data.topErrors.length > 0) {
+      var eHtml = '';
+      for (var e = 0; e < data.topErrors.length; e++) {
+        var err = data.topErrors[e];
+        var pNum = err.percentNum || parseFloat(err.percentage) || 0;
+
+        // Badge mức độ nghiêm trọng
+        var sevBadge = '<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--primary);font-size:11px;">Vừa</span>';
+        if (err.severity === 'Critical' || err.severity === 'Nghiêm trọng') {
+          sevBadge = '<span class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;font-size:11px;font-weight:800;">Nghiêm trọng</span>';
+        } else if (err.severity === 'High' || err.severity === 'Cao') {
+          sevBadge = '<span class="badge" style="background:rgba(245,158,11,0.2);color:#f59e0b;font-size:11px;font-weight:700;">Cao</span>';
+        }
+
+        var topBadge = (err.rank === 1 ? '🥇 Top 1' : err.rank === 2 ? '🥈 Top 2' : err.rank === 3 ? '🥉 Top 3' : ('#' + err.rank));
+
+        eHtml += '<tr>'
+          + '<td style="text-align:center;font-weight:800;color:var(--primary);">' + topBadge + '</td>'
+          + '<td><strong style="color:#fff;">' + err.category + '</strong></td>'
+          + '<td style="text-align:center;"><span class="badge" style="background:rgba(239,68,68,0.15);color:#ef4444;font-weight:800;font-size:13px;padding:3px 8px;">' + err.count + ' ca</span></td>'
+          + '<td>'
+            + '<div style="display:flex;align-items:center;gap:8px;">'
+              + '<div style="flex:1;background:rgba(255,255,255,0.08);border-radius:4px;height:7px;overflow:hidden;">'
+                + '<div style="width:' + Math.min(100, pNum) + '%;background:linear-gradient(90deg, var(--warning), var(--danger));height:100%;border-radius:4px;"></div>'
+              + '</div>'
+              + '<span style="font-weight:700;font-size:12px;min-width:42px;color:var(--text-secondary);">' + err.percentage + '</span>'
+            + '</div>'
+          + '</td>'
+          + '<td style="text-align:center;">' + sevBadge + '</td>'
+          + '<td><span style="font-size:12px;color:var(--text-secondary);">' + (err.topMember || 'N/A') + '</span></td>'
+          + '<td style="font-size:12px;line-height:1.45;color:#e2e8f0;">' + (err.guideline || 'Cần kiểm tra kỹ theo guideline dự án') + '</td>'
+          + '</tr>';
+      }
+      errBody.innerHTML = eHtml;
+    } else {
+      errBody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--success);font-weight:600;">'
+        + '🎉 Tuyệt vời! Không ghi nhận lỗi hoặc rework nào trong kỳ báo cáo này.</td></tr>';
+    }
+  }
+
+  // 4. Khối Tiến Độ 7 Ngày Trong Tuần (Chỉ hiển thị khi ở chế độ Tuần)
+  var trendSec = document.getElementById('rptDayTrendSection');
+  var trendBody = document.getElementById('rptDayTrendBody');
+  if (data.reportMode === 'DAY') {
+    if (trendSec) trendSec.style.display = 'none';
+  } else {
+    if (trendSec) trendSec.style.display = 'block';
+    if (trendBody && data.dayTrend) {
+      var tHtml = '';
+      for (var d = 0; d < data.dayTrend.length; d++) {
+        var item = data.dayTrend[d];
+        tHtml += '<tr>'
+          + '<td><strong>' + item.dayName + '</strong> (' + item.displayDate + ')</td>'
+          + '<td>' + item.output.toLocaleString('vi-VN') + '</td>'
+          + '<td>' + item.target.toLocaleString('vi-VN') + '</td>'
+          + '<td>' + item.accuracy + '%</td>'
+          + '</tr>';
+      }
+      trendBody.innerHTML = tHtml;
+    }
+  }
+
+  // 5. Đề xuất hành động thông minh
+  var recContainer = document.getElementById('rptRecommendations');
+  if (recContainer) {
+    var rHtml = '';
+    if (data.recommendations && data.recommendations.length > 0) {
+      for (var r = 0; r < data.recommendations.length; r++) {
+        var rec = data.recommendations[r];
+        rHtml += '<div style="padding:10px 14px;margin-bottom:8px;border-radius:8px;background:rgba(245,158,11,0.15);border-left:4px solid var(--warning);font-size:13px;">'
+          + '💡 ' + rec.text + '</div>';
+      }
+    } else {
+      rHtml = '<div style="color:var(--text-muted);font-size:13px;">Toàn đội duy trì phong độ rất tốt, không có cảnh báo nghiêm trọng.</div>';
+    }
+    recContainer.innerHTML = rHtml;
+  }
+}
+
+/**
+ * Xử lý khi người dùng chỉnh sửa trực tiếp số lần Rework trên bảng báo cáo
+ */
+function handleReportReworkChange(inputEl, memberIndex) {
+  if (!currentReportData || !currentReportData.rankings) return;
+
+  var val = parseInt(inputEl.value, 10);
+  if (isNaN(val) || val < 0) {
+    val = 0;
+    inputEl.value = 0;
+  }
+
+  var rk = currentReportData.rankings[memberIndex];
+  if (!rk) return;
+
+  rk.rework = val;
+  rk.errorCount = val;
+
+  // Hiệu ứng màu khi thay đổi
+  inputEl.style.color = val > 0 ? '#ef4444' : 'var(--text-muted)';
+  inputEl.style.borderColor = 'var(--primary)';
+  setTimeout(function() {
+    inputEl.style.borderColor = 'rgba(255,255,255,0.15)';
+  }, 1000);
+
+  // 1. Tự động tính toán lại Accuracy cho thành viên: Accuracy = (Output - Rework) / Output * 100
+  var out = parseFloat(rk.output || 0);
+  var newAcc = out > 0 ? Math.max(0, parseFloat(((out - val) / out * 100).toFixed(1))) : 100;
+  rk.accuracy = newAcc;
+
+  // Cập nhật ô hiển thị Accuracy
+  var accCell = document.getElementById('rptAccCell_' + memberIndex);
+  if (accCell) {
+    accCell.innerText = newAcc + '%';
+  }
+
+  // Cập nhật lại huy hiệu Đánh giá
+  var evalCell = document.getElementById('rptEvalCell_' + memberIndex);
+  if (evalCell) {
+    var statusBadge = '';
+    if (rk.targetCompletionRate >= 100 && newAcc >= 96) {
+      statusBadge = '<span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;">Xuất sắc</span>';
+    } else if (rk.targetCompletionRate >= 85) {
+      statusBadge = '<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;">Đạt yêu cầu</span>';
+    } else {
+      statusBadge = '<span class="badge" style="background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;">Dưới định mức</span>';
+    }
+    evalCell.innerHTML = statusBadge;
+  }
+
+  // 2. Tự động tính lại Tổng Rework & Độ chính xác TB trên 4 thẻ đầu trang
+  var totalRework = 0;
+  var totalAcc = 0;
+  var count = currentReportData.rankings.length;
+  for (var i = 0; i < count; i++) {
+    var item = currentReportData.rankings[i];
+    totalRework += (item.rework !== undefined ? item.rework : (item.errorCount || 0));
+    totalAcc += (item.accuracy || 100);
+  }
+  var avgAcc = count > 0 ? (totalAcc / count).toFixed(1) : 100;
+
+  currentReportData.overview.totalErrorCount = totalRework;
+  currentReportData.overview.totalRework = totalRework;
+  currentReportData.overview.accuracyRate = parseFloat(avgAcc);
+
+  var rptTotalErrorsEl = document.getElementById('rptTotalErrors');
+  if (rptTotalErrorsEl) rptTotalErrorsEl.innerText = totalRework;
+
+  var rptAccuracyEl = document.getElementById('rptAccuracy');
+  if (rptAccuracyEl) rptAccuracyEl.innerText = avgAcc + '%';
+
+  // 3. Đồng bộ lưu vào Google Sheet ngầm
+  if (currentReportPeriodMode === 'WEEK' && currentReportData.weekRange && rk.memberId) {
+    google.script.run
+      .withFailureHandler(function(err) {
+        console.warn('Lỗi lưu rework ngầm: ' + err.message);
+      })
+      .updateMemberWeeklyRework(currentReportData.weekRange.from, currentReportData.weekRange.to, rk.memberId, val);
+  } else if (currentReportPeriodMode === 'DAY' && (currentReportData.date || currentReportData.displayDate) && rk.memberId) {
+    var dStr = currentReportData.date || document.getElementById('reportDateSelect').value;
+    google.script.run
+      .withFailureHandler(function(err) {
+        console.warn('Lỗi lưu rework ngày ngầm: ' + err.message);
+      })
+      .updateMemberDailyRework(dStr, rk.memberId, val);
+  }
+
+  showToast('Đã cập nhật Rework của ' + rk.memberName + ': ' + val + ' lần (Độ chính xác: ' + newAcc + '%)', 'success');
+}
+
+/**
+ * Sao chép text báo cáo chi tiết vào bộ nhớ tạm
+ */
+function copyReportText() {
+  if (!currentReportData) return;
+
+  var totalRework = currentReportData.overview.totalRework !== undefined 
+    ? currentReportData.overview.totalRework 
+    : (currentReportData.overview.totalErrorCount || 0);
+
+  var text = '📊 ' + currentReportData.title + '\n'
+    + '===================================\n'
+    + '• Tổng sản lượng: ' + currentReportData.overview.totalOutput.toLocaleString('vi-VN') + ' Cuboid\n'
+    + '• Tỷ lệ đạt target: ' + currentReportData.overview.targetCompletionRate + '%\n'
+    + '• Độ chính xác (Accuracy): ' + currentReportData.overview.accuracyRate + '%\n'
+    + '• Tổng Rework ghi nhận: ' + totalRework + ' ca\n\n'
+    + '👥 CHI TIẾT SẢN LƯỢNG THÀNH VIÊN:\n';
+
+  var rankings = currentReportData.rankings || [];
+  for (var i = 0; i < rankings.length; i++) {
+    var h = rankings[i];
+    var rVal = (h.rework !== undefined) ? h.rework : (h.errorCount || 0);
+    var attStr = h.attendance ? (' - Chuyên cần: ' + h.attendance) : '';
+    text += h.rank + '. ' + h.memberName + ' (' + (h.role || 'Annotator') + ')' + attStr + ': ' 
+      + h.output.toLocaleString('vi-VN') + ' Cuboid / ' + h.target.toLocaleString('vi-VN') + ' Target (' 
+      + h.targetCompletionRate + '%) - Rework: ' + rVal + ' - Accuracy: ' + h.accuracy + '%\n';
+  }
+
+  // Thêm Top nguyên nhân Rework / Lỗi (Pareto 80/20)
+  var topErrList = currentReportData.topErrors || [];
+  if (topErrList.length > 0) {
+    text += '\n🎯 PHÂN TÍCH NGUYÊN NHÂN LỖI / REWORK HÀNG ĐẦU (PARETO 80/20):\n';
+    for (var te = 0; te < topErrList.length; te++) {
+      var item = topErrList[te];
+      text += (te + 1) + '. ' + item.category + ': ' + item.count + ' ca (' + item.percentage + ' tổng lỗi) - Hay gặp: ' + item.topMember + '\n'
+        + '   👉 Lưu ý: ' + item.guideline + '\n';
+    }
+  }
+
+  // Thêm đề xuất hành động
+  var recs = currentReportData.recommendations || [];
+  if (recs.length > 0) {
+    text += '\n💡 ĐỀ XUẤT HÀNH ĐỘNG / GHI CHÚ:\n';
+    for (var r = 0; r < recs.length; r++) {
+      text += '• ' + recs[r].text + '\n';
+    }
+  }
+
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('Đã sao chép nội dung báo cáo chi tiết vào bộ nhớ tạm!', 'success');
+  });
+}
+
+/**
+ * Xuất file Google Sheet mới tinh
+ */
+function exportReportToSheet() {
+  var periodVal = '';
+  if (currentReportPeriodMode === 'WEEK') {
+    var weekSelect = document.getElementById('reportWeekSelect');
+    periodVal = weekSelect ? weekSelect.value : '';
+  } else {
+    var dateInput = document.getElementById('reportDateSelect');
+    periodVal = dateInput ? dateInput.value : '';
+  }
+
+  showLoading('Đang tạo Google Sheet ' + (currentReportPeriodMode === 'WEEK' ? 'báo cáo tuần' : 'báo cáo ngày') + ' mới...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+      if (res.fileUrl) {
+        window.open(res.fileUrl, '_blank');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi xuất Google Sheet: ' + err.message, 'error');
+    })
+    .exportReportToSpreadsheet(currentReportPeriodMode, periodVal, currentReportData);
+}
+
+/**
+ * Lưu bản ghi báo cáo vào lịch sử hệ thống
+ */
+function saveReportToHistory() {
+  if (!currentReportData) return;
+
+  var note = document.getElementById('rptManagerNote') ? document.getElementById('rptManagerNote').value : '';
+  var plan = document.getElementById('rptNextWeekPlan') ? document.getElementById('rptNextWeekPlan').value : '';
+
+  currentReportData.managerNote = note;
+  currentReportData.nextWeekPlan = plan;
+
+  showLoading('Đang lưu báo cáo vào lịch sử...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi lưu lịch sử: ' + err.message, 'error');
+    })
+    .saveWeeklyReportRecord(currentReportData);
+}
+
+// ============================================================================
+// 9. QUẢN TRỊ ADMIN (SETTINGS & RE-SEED)
+// ============================================================================
+
+function loadAdminSettingsTab() {
+  var tbody = document.getElementById('adminMembersTableBody');
+  if (!tbody) return;
+
+  var html = '';
+  for (var i = 0; i < AppState.members.length; i++) {
+    var m = AppState.members[i];
+    html += '<tr>'
+      + '<td><strong>' + m.FullName + '</strong></td>'
+      + '<td>' + m.Email + '</td>'
+      + '<td>' + m.Role + '</td>'
+      + '<td>' + m.DailyTarget + '</td>'
+      + '<td><span class="badge" style="background:var(--success-light);color:var(--success);">' + m.Status + '</span></td>'
+      + '<td><button class="btn btn-danger btn-sm" onclick="deleteMemberRow(\'' + m.MemberID + '\')">Xóa</button></td>'
+      + '</tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function resetSampleDatabase() {
+  if (!confirm('Bạn có chắc chắn muốn TẠO LẠI TOÀN BỘ cơ sở dữ liệu với 10 thành viên chuẩn và Bảng Điểm danh không? Hành động này sẽ cập nhật lại 10 thành viên và các sheet liên quan.')) {
+    return;
+  }
+
+  showLoading('Đang khởi tạo lại Database và nạp dữ liệu mẫu...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+      setTimeout(function() {
+        location.reload();
+      }, 1500);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi tạo dữ liệu mẫu: ' + err.message, 'error');
+    })
+    .setupDatabase();
+}
+
+function deleteMemberRow(memberId) {
+  if (!confirm('Bạn có chắc chắn muốn xóa thành viên này không?')) return;
+
+  showLoading('Đang xóa thành viên...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      showToast(res.message, 'success');
+      initApp();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi xóa: ' + err.message, 'error');
+    })
+    .deleteMember(memberId);
+}
+
+// ============================================================================
+// 10. ĐIỂM DANH HẰNG NGÀY & TÁC PHONG (ATTENDANCE CLIENT)
+// ============================================================================
+
+var currentAttendanceData = null;
+
+function loadAttendanceTable() {
+  var dateInp = document.getElementById('attendanceDateInput');
+  if (!dateInp) return;
+
+  if (!dateInp.value) {
+    // Mặc định ngày hôm nay 2026-10-25 hoặc ngày hiện tại
+    dateInp.value = new Date().toISOString().substring(0, 10);
+  }
+
+  var dateVal = dateInp.value;
+  showLoading('Đang tải bảng điểm danh ngày ' + dateVal + '...');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || !res.success) {
+        showToast('Không thể tải điểm danh!', 'error');
+        return;
+      }
+      currentAttendanceData = res;
+      renderAttendanceTable(res);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi tải điểm danh: ' + err.message, 'error');
+    })
+    .getDailyAttendance(dateVal);
+}
+
+function renderAttendanceTable(data) {
+  var tbody = document.getElementById('attendanceTableBody');
+  var badgeEl = document.getElementById('attSaveStatusBadge');
+  if (badgeEl) {
+    badgeEl.style.display = data.isSaved ? 'inline-block' : 'none';
+    badgeEl.innerText = data.isSaved ? '✓ Đã lưu ngày này' : 'Chưa lưu';
+  }
+
+  if (!tbody) return;
+
+  var statusOptions = ['Có mặt', 'Vắng mặt', 'Nghỉ phép', 'Nghỉ không phép', 'Nghỉ nửa ngày'];
+  var demeanorOptions = ['Đạt', 'Không đạt'];
+
+  var html = '';
+  for (var i = 0; i < data.attendance.length; i++) {
+    var r = data.attendance[i];
+
+    // Select Điểm danh
+    var optStatusHtml = '';
+    for (var s = 0; s < statusOptions.length; s++) {
+      var st = statusOptions[s];
+      var selSt = (r.status === st) ? 'selected' : '';
+      optStatusHtml += '<option value="' + st + '" ' + selSt + '>' + st + '</option>';
+    }
+
+    // Select Tác phong
+    var optDemHtml = '';
+    for (var d = 0; d < demeanorOptions.length; d++) {
+      var dem = demeanorOptions[d];
+      var selDem = (r.demeanor === dem) ? 'selected' : '';
+      optDemHtml += '<option value="' + dem + '" ' + selDem + '>' + dem + '</option>';
+    }
+
+    // Màu role
+    var roleBadge = '<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--primary);font-size:11px;">' + r.role + '</span>';
+    if (r.role === 'Team Lead') {
+      roleBadge = '<span class="badge badge-gold" style="font-size:11px;">👑 Team Lead</span>';
+    } else if (r.role === 'Annotator + QC') {
+      roleBadge = '<span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success);font-size:11px;">🔍 Annotator + QC</span>';
+    }
+
+    html += '<tr>'
+      + '<td style="text-align:center;font-weight:700;">' + (i + 1) + '</td>'
+      + '<td><strong>' + r.memberName + '</strong></td>'
+      + '<td>' + roleBadge + '</td>'
+      + '<td>'
+      +   '<select class="form-select form-select-sm att-status-select" data-id="' + r.memberId + '" onchange="recalcAttendanceStats()">'
+      +     optStatusHtml
+      +   '</select>'
+      + '</td>'
+      + '<td>'
+      +   '<select class="form-select form-select-sm att-dem-select" data-id="' + r.memberId + '" onchange="recalcAttendanceStats()">'
+      +     optDemHtml
+      +   '</select>'
+      + '</td>'
+      + '<td>'
+      +   '<input type="text" class="form-input form-input-sm att-note-input" data-id="' + r.memberId + '" value="' + (r.note || '') + '" placeholder="Ghi chú lý do nghỉ, tác phong..." style="width:100%;">'
+      + '</td>'
+      + '</tr>';
+  }
+
+  tbody.innerHTML = html;
+  recalcAttendanceStats();
+}
+
+function recalcAttendanceStats() {
+  var statusSelects = document.querySelectorAll('.att-status-select');
+  var demSelects = document.querySelectorAll('.att-dem-select');
+
+  var presentCount = 0;
+  var leaveCount = 0;
+  var absentCount = 0;
+  var demFailCount = 0;
+  var total = statusSelects.length;
+
+  statusSelects.forEach(function(sel) {
+    var v = sel.value;
+    if (v === 'Có mặt') presentCount++;
+    else if (v === 'Nghỉ phép' || v === 'Nghỉ nửa ngày') leaveCount++;
+    else if (v === 'Vắng mặt' || v === 'Nghỉ không phép') absentCount++;
+  });
+
+  demSelects.forEach(function(sel) {
+    if (sel.value === 'Không đạt') demFailCount++;
+  });
+
+  var elP = document.getElementById('attStatPresent');
+  var elL = document.getElementById('attStatLeave');
+  var elA = document.getElementById('attStatAbsent');
+  var elD = document.getElementById('attStatDemeanorFail');
+
+  if (elP) elP.innerText = presentCount + ' / ' + total;
+  if (elL) elL.innerText = leaveCount;
+  if (elA) elA.innerText = absentCount;
+  if (elD) elD.innerText = demFailCount;
+}
+
+function quickMarkAllAttendance() {
+  var statusSelects = document.querySelectorAll('.att-status-select');
+  var demSelects = document.querySelectorAll('.att-dem-select');
+  var noteInputs = document.querySelectorAll('.att-note-input');
+
+  statusSelects.forEach(function(sel) { sel.value = 'Có mặt'; });
+  demSelects.forEach(function(sel) { sel.value = 'Đạt'; });
+  noteInputs.forEach(function(inp) { inp.value = ''; });
+
+  recalcAttendanceStats();
+  showToast('Đã chọn nhanh Tất cả Có mặt & Đạt! Nhớ bấm "Lưu Bảng Điểm Danh" để lưu vào hệ thống.', 'info');
+}
+
+function saveDailyAttendanceData() {
+  var dateInp = document.getElementById('attendanceDateInput');
+  var dateVal = dateInp ? dateInp.value : '';
+  if (!dateVal) {
+    showToast('Vui lòng chọn ngày điểm danh!', 'warning');
+    return;
+  }
+
+  var statusSelects = document.querySelectorAll('.att-status-select');
+  var demSelects = document.querySelectorAll('.att-dem-select');
+  var noteInputs = document.querySelectorAll('.att-note-input');
+
+  var list = [];
+  statusSelects.forEach(function(sel, idx) {
+    var mId = sel.getAttribute('data-id');
+    var st = sel.value;
+    var dem = demSelects[idx] ? demSelects[idx].value : 'Đạt';
+    var note = noteInputs[idx] ? noteInputs[idx].value : '';
+
+    list.push({
+      memberId: mId,
+      status: st,
+      demeanor: dem,
+      note: note
+    });
+  });
+
+  showLoading('Đang lưu dữ liệu điểm danh ngày ' + dateVal + '...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.success) {
+        showToast(res.message, 'success');
+        var badgeEl = document.getElementById('attSaveStatusBadge');
+        if (badgeEl) {
+          badgeEl.style.display = 'inline-block';
+          badgeEl.innerText = '✓ Đã lưu ngày này';
+        }
+      } else {
+        showToast(res ? res.message : 'Lỗi khi lưu điểm danh!', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi lưu điểm danh: ' + err.message, 'error');
+    })
+    .saveDailyAttendance(dateVal, list);
+}
+
+// ============================================================================
+// 11. QUẢN LÝ PHÂN QUYỀN VAI TRÒ (ROLES CLIENT)
+// ============================================================================
+
+function loadRolesManagementTab() {
+  showLoading('Đang tải danh sách thành viên và phân quyền...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || !res.success) {
+        showToast('Không thể tải danh sách thành viên!', 'error');
+        return;
+      }
+      if (res.members && res.members.length > 0) {
+        AppState.members = res.members;
+        populateSelectDropdowns(); // Đồng bộ ngay danh sách thành viên và Role cho toàn bộ hệ thống
+      }
+      renderRolesTable(res.members, res.rolesList);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi tải: ' + err.message, 'error');
+    })
+    .getAllMembersWithRoles();
+}
+
+function renderRolesTable(members, rolesList) {
+  var tbody = document.getElementById('rolesTableBody');
+  if (!tbody) return;
+
+  var countTeamLead = 0;
+  var countQC = 0;
+  var countAnnotator = 0;
+
+  var html = '';
+  for (var i = 0; i < members.length; i++) {
+    var m = members[i];
+    var currentRole = m.Role || 'Annotator';
+
+    // Đếm số lượng role
+    if (currentRole === 'Team Lead' || currentRole === 'ADMIN') countTeamLead++;
+    else if (currentRole === 'Annotator + QC' || currentRole === 'QA') countQC++;
+    else countAnnotator++;
+
+    var optRoles = '';
+    var standardRoles = ['Annotator', 'Annotator + QC', 'Team Lead'];
+    for (var r = 0; r < standardRoles.length; r++) {
+      var rName = standardRoles[r];
+      var isSel = (currentRole === rName) ? 'selected' : '';
+      var prefix = (rName === 'Team Lead') ? '👑 ' : (rName === 'Annotator + QC') ? '🔍 ' : '🏷️ ';
+      optRoles += '<option value="' + rName + '" ' + isSel + '>' + prefix + rName + '</option>';
+    }
+
+    html += '<tr>'
+      + '<td style="text-align:center;font-weight:700;">' + (i + 1) + '</td>'
+      + '<td><strong>' + m.FullName + '</strong></td>'
+      + '<td>' + (m.Email || '--') + '</td>'
+      + '<td>'
+      +   '<select class="form-select form-select-sm member-role-select" data-id="' + m.MemberID + '" style="font-weight:600;">'
+      +     optRoles
+      +   '</select>'
+      + '</td>'
+      + '<td><span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success);">Đang hoạt động</span></td>'
+      + '</tr>';
+  }
+
+  tbody.innerHTML = html;
+
+  // Cập nhật thẻ đếm
+  var elTL = document.getElementById('roleCountTeamLead');
+  var elQC = document.getElementById('roleCountQC');
+  var elAnn = document.getElementById('roleCountAnnotator');
+  if (elTL) elTL.innerText = countTeamLead;
+  if (elQC) elQC.innerText = countQC;
+  if (elAnn) elAnn.innerText = countAnnotator;
+}
+
+function saveMembersRolesData() {
+  var selects = document.querySelectorAll('.member-role-select');
+  if (!selects || selects.length === 0) {
+    showToast('Không tìm thấy danh sách thành viên!', 'warning');
+    return;
+  }
+
+  var rolesMap = {};
+  selects.forEach(function(sel) {
+    var mId = sel.getAttribute('data-id');
+    if (mId) {
+      rolesMap[mId] = sel.value;
+    }
+  });
+
+  showLoading('Đang lưu thay đổi phân quyền...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.success) {
+        showToast(res.message, 'success');
+        loadRolesManagementTab();
+      } else {
+        showToast(res ? res.message : 'Lỗi khi lưu phân quyền!', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi lưu phân quyền: ' + err.message, 'error');
+    })
+    .saveAllMemberRoles(rolesMap);
+}
+// ============================================================================
+// 12. ĐÁNH GIÁ NĂNG LỰC TTS / OJT (ATTITUDE · SKILL · OUTPUT) CLIENT
+// ============================================================================
+
+var currentAttitudeData = null;
+var currentEvalCategory = 'attitude'; // 'attitude' | 'skill' | 'output' | 'overall'
+
+/**
+ * Chuyển đổi giữa 4 nhóm năng lực: Attitude, Skill, Output, Tổng Hợp
+ */
+function switchEvalCategory(cat) {
+  currentEvalCategory = cat || 'attitude';
+  var btns = ['Attitude', 'Skill', 'Output', 'Overall'];
+  btns.forEach(function(b) {
+    var el = document.getElementById('tabBtn' + b);
+    if (el) {
+      if (b.toLowerCase() === currentEvalCategory) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    }
+  });
+
+  renderCurrentEvaluation();
+}
+
+/**
+ * Bật/Tắt hiển thị Bảng Thang Điểm Tham Chiếu Chuẩn VinFast
+ */
+function toggleReferenceMatrix() {
+  var box = document.getElementById('refMatrixBox');
+  if (box) {
+    box.style.display = (box.style.display === 'none' || box.style.display === '') ? 'block' : 'none';
+  }
+}
+
+/**
+ * Tải dữ liệu Đánh Giá Năng Lực theo tuần được chọn
+ */
+function loadAttitudeEvaluationData() {
+  var weekSelect = document.getElementById('attitudeWeekSelect');
+  var weekVal = weekSelect ? weekSelect.value : '';
+
+  showLoading('Đang phân tích Điểm danh & KPI tạo Đánh Giá Năng Lực...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (!res || !res.success) {
+        showToast(res ? res.message : 'Không thể tải dữ liệu Đánh Giá!', 'error');
+        return;
+      }
+      currentAttitudeData = res;
+      renderCurrentEvaluation();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi tải đánh giá: ' + err.message, 'error');
+    })
+    .getAttitudeEvaluation(weekVal);
+}
+
+/**
+ * Phân loại nhanh điểm số ở Client theo thang 1-100:
+ * 90-100: L3 | 80-89: L2 | 70-79: L2 | 50-69: L1 | <50: <L1
+ */
+function getClientEvalClassObj(score) {
+  var s = Math.round(Number(score) || 0);
+  if (s >= 90) {
+    return { level: 'L3', badgeClass: 'badge-l3', fillClass: 'fill-l3', borderClass: 'card-border-l3' };
+  } else if (s >= 80) {
+    return { level: 'L2', badgeClass: 'badge-l2', fillClass: 'fill-l2', borderClass: 'card-border-l2' };
+  } else if (s >= 70) {
+    return { level: 'L2', badgeClass: 'badge-l2', fillClass: 'fill-l2', borderClass: 'card-border-l2' };
+  } else if (s >= 50) {
+    return { level: 'L1', badgeClass: 'badge-l1', fillClass: 'fill-l1', borderClass: 'card-border-l1' };
+  } else {
+    return { level: '< L1', badgeClass: 'badge-below', fillClass: 'fill-below', borderClass: 'card-border-below' };
+  }
+}
+
+/**
+ * Hiển thị dữ liệu Đánh Giá Năng Lực theo tab được chọn
+ */
+function renderCurrentEvaluation() {
+  var data = currentAttitudeData;
+  if (!data) return;
+
+  var canEdit = (AppState.currentUser && (AppState.currentUser.role === 'Team Lead' || AppState.currentUser.role === 'ADMIN' || AppState.currentUser.role === 'Annotator + QC'));
+
+  var btnSave = document.getElementById('btnSaveAttitude');
+  var btnReset = document.getElementById('btnResetAttitude');
+  if (btnSave) {
+    btnSave.style.display = canEdit ? 'inline-flex' : 'none';
+    btnSave.style.boxShadow = '';
+    btnSave.innerHTML = '💾 Lưu Đánh Giá (Team Lead)';
+  }
+  if (btnReset) {
+    btnReset.style.display = (canEdit && data.isSaved) ? 'inline-flex' : 'none';
+  }
+
+  // 1. Thống kê trên Header Banner
+  var elAvg = document.getElementById('attitudeTeamAvgStat');
+  var elRatio = document.getElementById('attitudeOnTimeRatioStat');
+  var elAvgLabel = document.getElementById('attitudeAvgStatLabel');
+  var elRatioLabel = document.getElementById('attitudeRatioStatLabel');
+  var elTitle = document.getElementById('attitudeMainTitle');
+  var elDesc = document.getElementById('attitudeBannerDesc');
+  var elHeaderTag = document.getElementById('attitudeTeamHeaderTag');
+  var elFootLeft = document.getElementById('attitudeFooterLeft');
+  var elFootRight = document.getElementById('attitudeFooterRight');
+
+  if (elHeaderTag) elHeaderTag.innerText = (data.teamName || 'VINFAST · TEAM T1 3D LIDAR') + ' · TEAM LEAD ' + (data.teamLead || 'NGUYỄN TIẾN SỸ').toUpperCase();
+  if (elFootLeft) elFootLeft.innerText = 'Đánh giá Năng lực OJT / TTS · ' + (data.teamName || 'Team T1 3D LIDAR') + ' · Tầng 28';
+  if (elFootRight) elFootRight.innerText = 'Team lead: ' + (data.teamLead || 'Nguyễn Tiến Sỹ');
+
+  var catData = data[currentEvalCategory] || data.attitude;
+  if (!catData) return;
+
+  if (elAvg) elAvg.innerText = catData.avgTeamScore || '--';
+  if (elRatio) elRatio.innerText = catData.completedOnTimeRatio || '--';
+  if (elAvgLabel) elAvgLabel.innerText = currentEvalCategory === 'overall' ? 'TB ĐIỂM TỔNG HỢP' : ('TB ' + currentEvalCategory.toUpperCase());
+  if (elRatioLabel) elRatioLabel.innerText = 'ĐẠT CHUẨN L2 - L3';
+
+  if (elTitle) {
+    if (currentEvalCategory === 'attitude') elTitle.innerText = 'Đánh giá Attitude (Thái độ & Thích ứng · 20%)';
+    else if (currentEvalCategory === 'skill') elTitle.innerText = 'Đánh giá Skill (Năng lực chuyên môn · 50%)';
+    else if (currentEvalCategory === 'output') elTitle.innerText = 'Đánh giá Output (Chất lượng kết quả & Độ tin cậy · 30%)';
+    else elTitle.innerText = 'Tổng Hợp Đánh Giá Năng Lực Thành Viên (100%)';
+  }
+
+  if (elDesc) {
+    elDesc.innerHTML = '<strong>' + (catData.desc || '') + '</strong> (Dữ liệu tuần ' + (data.displayRange || '') + '). Mentor: <strong>' + (data.mentor || 'Vũ Trọng Duyệt') + '</strong> · Team Lead: <strong>' + (data.teamLead || 'Nguyễn Tiến Sỹ') + '</strong>.';
+  }
+
+  // 2. Render Header & Rows của Bảng Đánh Giá
+  var thead = document.getElementById('attitudeTableHead');
+  var tbody = document.getElementById('attitudeTableBody');
+  var legendBox = document.getElementById('attitudeLegendBox');
+
+  if (currentEvalCategory === 'overall') {
+    if (thead) {
+      thead.innerHTML = '<tr>'
+        + '<th style="width:50px; text-align:center;">#</th>'
+        + '<th style="width:210px;">THÀNH VIÊN</th>'
+        + '<th style="width:140px; text-align:center;">ATTITUDE (20%)</th>'
+        + '<th style="width:140px; text-align:center;">SKILL (50%)</th>'
+        + '<th style="width:140px; text-align:center;">OUTPUT (30%)</th>'
+        + '<th style="width:120px; text-align:center;">TỔNG ĐIỂM</th>'
+        + '<th style="width:120px; text-align:center;">XẾP LOẠI CHUNG</th>'
+        + '</tr>';
+    }
+    if (legendBox) legendBox.style.display = 'flex';
+
+    if (tbody) {
+      var oList = catData.members || [];
+      var oHtml = '';
+      for (var i = 0; i < oList.length; i++) {
+        var om = oList[i];
+        var attCls = getClientEvalClassObj(om.attScore);
+        var skillCls = getClientEvalClassObj(om.skillScore);
+        var outCls = getClientEvalClassObj(om.outputScore);
+        var ovCls = getClientEvalClassObj(om.score);
+
+        oHtml += '<tr class="attitude-row" data-id="' + om.memberId + '">'
+          + '<td class="attitude-rank-col">' + om.rankStr + '</td>'
+          + '<td>'
+          + '  <div class="attitude-member-col">'
+          + '    <span class="attitude-avatar">' + om.initials + '</span>'
+          + '    <div><div class="attitude-name-text">' + om.memberName + '</div><small style="color:var(--text-muted);">' + (om.role || '') + '</small></div>'
+          + '  </div>'
+          + '</td>'
+          + '<td style="text-align:center;"><strong style="font-size:16px;">' + om.attScore + '</strong> <span class="attitude-badge ' + attCls.badgeClass + '" style="padding:2px 8px;font-size:11px;margin-left:4px;">' + attCls.level + '</span></td>'
+          + '<td style="text-align:center;"><strong style="font-size:16px;">' + om.skillScore + '</strong> <span class="attitude-badge ' + skillCls.badgeClass + '" style="padding:2px 8px;font-size:11px;margin-left:4px;">' + skillCls.level + '</span></td>'
+          + '<td style="text-align:center;"><strong style="font-size:16px;">' + om.outputScore + '</strong> <span class="attitude-badge ' + outCls.badgeClass + '" style="padding:2px 8px;font-size:11px;margin-left:4px;">' + outCls.level + '</span></td>'
+          + '<td style="text-align:center;"><span class="attitude-score-num" style="font-size:22px;color:#2563eb;">' + om.score + '</span></td>'
+          + '<td style="text-align:center;"><span class="attitude-badge ' + ovCls.badgeClass + '" style="font-size:13px;padding:5px 14px;">' + ovCls.level + '</span></td>'
+          + '</tr>';
+      }
+      tbody.innerHTML = oHtml;
+    }
+  } else {
+    // Single category (Attitude, Skill, Output)
+    if (thead) {
+      thead.innerHTML = '<tr>'
+        + '<th style="width:50px; text-align:center;">#</th>'
+        + '<th style="width:230px;">THÀNH VIÊN</th>'
+        + '<th>TIẾN TRÌNH ĐIỂM SỐ · THANG 1–100</th>'
+        + '<th style="width:90px; text-align:center;">ĐIỂM</th>'
+        + '<th style="width:120px; text-align:center;">XẾP LOẠI</th>'
+        + '</tr>';
+    }
+    if (legendBox) legendBox.style.display = 'flex';
+
+    if (tbody) {
+      var sList = catData.members || [];
+      var sHtml = '';
+      for (var k = 0; k < sList.length; k++) {
+        var sm = sList[k];
+        var pct = Math.max(3, Math.min(100, sm.score));
+        var clsObj = getClientEvalClassObj(sm.score);
+
+        var scoreCellHtml = '';
+        if (canEdit) {
+          scoreCellHtml = '<input type="number" min="1" max="100" class="form-input attitude-score-input" data-cat="' + currentEvalCategory + '" data-id="' + sm.memberId + '" value="' + sm.score + '" oninput="onEvalScoreInputChange(\'' + currentEvalCategory + '\', \'' + sm.memberId + '\', this.value)" style="width:72px;text-align:center;font-weight:800;font-size:17px;padding:4px 6px;">';
+        } else {
+          scoreCellHtml = '<span class="attitude-score-num">' + sm.score + '</span>';
+        }
+
+        sHtml += '<tr class="attitude-row" data-id="' + sm.memberId + '">'
+          + '<td class="attitude-rank-col">' + sm.rankStr + '</td>'
+          + '<td>'
+          + '  <div class="attitude-member-col">'
+          + '    <span class="attitude-avatar">' + sm.initials + '</span>'
+          + '    <div><div class="attitude-name-text">' + sm.memberName + '</div><small style="color:var(--text-muted);">' + (sm.role || '') + '</small></div>'
+          + '  </div>'
+          + '</td>'
+          + '<td class="attitude-bar-cell">'
+          + '  <div class="attitude-bar-wrapper">'
+          + '    <div class="attitude-marker-50" title="Mốc 50 (L1: Cơ bản)"></div>'
+          + '    <div class="attitude-marker-70" title="Mốc 70 (L2: Đạt yêu cầu)"></div>'
+          + '    <div class="attitude-marker-80" title="Mốc 80 (L2: Chất lượng cao)"></div>'
+          + '    <div class="attitude-marker-90" title="Mốc 90 (L3: Xuất sắc / Mentor)"></div>'
+          + '    <div class="attitude-bar-fill ' + clsObj.fillClass + '" id="evalBar_' + sm.memberId + '" style="width: ' + pct + '%;"></div>'
+          + '  </div>'
+          + '</td>'
+          + '<td style="text-align:center;">' + scoreCellHtml + '</td>'
+          + '<td style="text-align:center;">'
+          + '  <span class="attitude-badge ' + clsObj.badgeClass + '" id="evalBadge_' + sm.memberId + '">' + clsObj.level + '</span>'
+          + '</td>'
+          + '</tr>';
+      }
+      tbody.innerHTML = sHtml;
+    }
+  }
+
+  // 3. Render Cards Ghi Chú - Lý Do Xếp Loại
+  var grid = document.getElementById('attitudeReasonsGrid');
+  var reasonsTitle = document.getElementById('attitudeReasonsTitle');
+  if (reasonsTitle) {
+    reasonsTitle.innerText = 'Ghi chú · Lý do xếp loại (' + (currentEvalCategory === 'overall' ? 'Tổng Hợp' : currentEvalCategory.toUpperCase()) + ')';
+  }
+
+  if (grid) {
+    var cList = catData.members || [];
+    var gridHtml = '';
+    for (var j = 0; j < cList.length; j++) {
+      var item = cList[j];
+      var cClass = getClientEvalClassObj(item.score);
+
+      var reasonContentHtml = '';
+      if (canEdit && currentEvalCategory !== 'overall') {
+        reasonContentHtml = '<textarea class="attitude-reason-edit" data-cat="' + currentEvalCategory + '" data-id="' + item.memberId + '" rows="2" oninput="onReasonTextChange(\'' + currentEvalCategory + '\', \'' + item.memberId + '\', this.value)" placeholder="Ghi chú lý do xếp loại...">' + (item.reason || '') + '</textarea>';
+      } else {
+        reasonContentHtml = '<div class="attitude-reason-text">' + (item.reason || 'Chưa có ghi chú.') + '</div>';
+      }
+
+      gridHtml += '<div class="attitude-reason-card ' + cClass.borderClass + '" id="evalCard_' + item.memberId + '">'
+        + '<div class="attitude-reason-card-header">'
+        + '  <div class="attitude-reason-card-title">'
+        + '    <span class="attitude-avatar" style="width:32px;height:32px;font-size:11.5px;">' + (item.initials || 'NV') + '</span>'
+        + '    <div>'
+        + '      <div style="font-weight:700;font-size:14.5px;color:#f8fafc;">' + item.rank + '. ' + item.memberName + '</div>'
+        + '      <div style="color:#64748b;font-size:11px;font-weight:500;">' + (item.role || 'Thành viên') + '</div>'
+        + '    </div>'
+        + '  </div>'
+        + '  <span class="attitude-badge ' + cClass.badgeClass + '" id="evalCardBadge_' + item.memberId + '">' + item.score + ' · ' + cClass.level + '</span>'
+        + '</div>'
+        + reasonContentHtml
+        + '</div>';
+    }
+    grid.innerHTML = gridHtml;
+  }
+}
+
+/**
+ * Tương thích ngược: renderAttitudeEvaluation gọi lại renderCurrentEvaluation
+ */
+function renderAttitudeEvaluation(data) {
+  currentAttitudeData = data;
+  renderCurrentEvaluation();
+}
+
+/**
+ * Xử lý khi thay đổi nội dung nhận xét lý do xếp loại
+ */
+function onReasonTextChange(cat, memberId, text) {
+  if (currentAttitudeData && currentAttitudeData[cat] && currentAttitudeData[cat].members) {
+    var m = currentAttitudeData[cat].members.find(function(x) { return x.memberId === memberId; });
+    if (m) {
+      m.reason = text;
+      m.isCustom = true;
+    }
+  }
+  markAttitudeChanged();
+}
+
+/**
+ * Xử lý khi sửa điểm ô input số (1-100)
+ */
+function onEvalScoreInputChange(cat, memberId, val) {
+  var num = parseInt(val, 10);
+  if (isNaN(num)) num = 75;
+  if (num < 1) num = 1;
+  if (num > 100) num = 100;
+
+  var clsObj = getClientEvalClassObj(num);
+
+  // Cập nhật thanh bar
+  var bar = document.getElementById('evalBar_' + memberId);
+  if (bar) {
+    bar.style.width = num + '%';
+    bar.className = 'attitude-bar-fill ' + clsObj.fillClass;
+  }
+
+  // Cập nhật badge trên bảng
+  var badge = document.getElementById('evalBadge_' + memberId);
+  if (badge) {
+    badge.className = 'attitude-badge ' + clsObj.badgeClass;
+    badge.innerText = clsObj.level;
+  }
+
+  // Cập nhật badge trên card
+  var cBadge = document.getElementById('evalCardBadge_' + memberId);
+  if (cBadge) {
+    cBadge.className = 'attitude-badge ' + clsObj.badgeClass;
+    cBadge.innerText = num + ' · ' + clsObj.level;
+  }
+
+  // Cập nhật viền card
+  var card = document.getElementById('evalCard_' + memberId);
+  if (card) {
+    card.className = 'attitude-reason-card ' + clsObj.borderClass;
+  }
+
+  // Cập nhật trong bộ nhớ currentAttitudeData
+  if (currentAttitudeData && currentAttitudeData[cat] && currentAttitudeData[cat].members) {
+    var mObj = currentAttitudeData[cat].members.find(function(x) { return x.memberId === memberId; });
+    if (mObj) {
+      mObj.score = num;
+      mObj.classification = clsObj.level;
+      mObj.isCustom = true;
+    }
+  }
+
+  // Tự động tính lại điểm tổng hợp (Overall) trong bộ nhớ cho thành viên này
+  if (currentAttitudeData && currentAttitudeData.overall && currentAttitudeData.overall.members) {
+    var ovObj = currentAttitudeData.overall.members.find(function(x) { return x.memberId === memberId; });
+    var attObj = (currentAttitudeData.attitude && currentAttitudeData.attitude.members) ? currentAttitudeData.attitude.members.find(function(x) { return x.memberId === memberId; }) : null;
+    var skillObj = (currentAttitudeData.skill && currentAttitudeData.skill.members) ? currentAttitudeData.skill.members.find(function(x) { return x.memberId === memberId; }) : null;
+    var outObj = (currentAttitudeData.output && currentAttitudeData.output.members) ? currentAttitudeData.output.members.find(function(x) { return x.memberId === memberId; }) : null;
+
+    if (ovObj && attObj && skillObj && outObj) {
+      ovObj.attScore = attObj.score;
+      ovObj.attClass = attObj.classification;
+      ovObj.skillScore = skillObj.score;
+      ovObj.skillClass = skillObj.classification;
+      ovObj.outputScore = outObj.score;
+      ovObj.outputClass = outObj.classification;
+      ovObj.score = Math.round(attObj.score * 0.2 + skillObj.score * 0.5 + outObj.score * 0.3);
+      ovObj.classification = getClientEvalClassObj(ovObj.score).level;
+    }
+  }
+
+  markAttitudeChanged();
+}
+
+/**
+ * Hàm tương thích với hàm cũ
+ */
+function onAttitudeScoreInputChange(memberId, val) {
+  onEvalScoreInputChange('attitude', memberId, val);
+}
+
+/**
+ * Đánh dấu có thay đổi để làm nổi bật nút Lưu
+ */
+function markAttitudeChanged() {
+  var btnSave = document.getElementById('btnSaveAttitude');
+  if (btnSave) {
+    btnSave.style.boxShadow = '0 0 14px rgba(245, 158, 11, 0.7)';
+    btnSave.innerHTML = '💾 Lưu Đánh Giá (Đã thay đổi*)';
+  }
+}
+
+/**
+ * Team Lead lưu đánh giá Năng Lực (Attitude, Skill, Output) vào hệ thống
+ */
+function saveAttitudeEvaluationClient() {
+  if (!currentAttitudeData || !currentAttitudeData.periodKey) {
+    showToast('Chưa có thông tin tuần để lưu!', 'error');
+    return;
+  }
+
+  var evalPayload = {
+    attitude: {},
+    skill: {},
+    output: {}
+  };
+
+  ['attitude', 'skill', 'output'].forEach(function(cat) {
+    if (currentAttitudeData[cat] && currentAttitudeData[cat].members) {
+      currentAttitudeData[cat].members.forEach(function(m) {
+        evalPayload[cat][m.memberId] = {
+          score: m.score,
+          classification: m.classification,
+          reason: m.reason || ''
+        };
+      });
+    }
+  });
+
+  showLoading('Đang lưu đánh giá Năng Lực (Attitude - Skill - Output)...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.success) {
+        showToast('Đã lưu đánh giá Năng Lực thành công!', 'success');
+        loadAttitudeEvaluationData();
+      } else {
+        showToast(res ? res.message : 'Lỗi khi lưu đánh giá!', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi lưu đánh giá: ' + err.message, 'error');
+    })
+    .saveAttitudeEvaluation(currentAttitudeData.periodKey, evalPayload);
+}
+
+/**
+ * Khôi phục lại đánh giá tự động tính từ Bảng Điểm Danh & KPI & Lỗi
+ */
+function resetAttitudeEvaluationClient() {
+  if (!currentAttitudeData || !currentAttitudeData.periodKey) return;
+
+  if (!confirm('Bạn có chắc chắn muốn xóa đánh giá tùy chỉnh và khôi phục lại tính điểm tự động từ Điểm Danh & KPI không?')) {
+    return;
+  }
+
+  showLoading('Đang khôi phục đánh giá tự động từ Điểm Danh & KPI...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.success) {
+        showToast('Đã khôi phục đánh giá tự động thành công!', 'success');
+        loadAttitudeEvaluationData();
+      } else {
+        showToast(res ? res.message : 'Lỗi khi khôi phục!', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('Lỗi khôi phục: ' + err.message, 'error');
+    })
+    .resetAttitudeEvaluation(currentAttitudeData.periodKey);
+}
+</script>
