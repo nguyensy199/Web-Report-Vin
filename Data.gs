@@ -1302,6 +1302,7 @@ function getAttitudeEvaluation(weekFromDate) {
 
     // 1. Thống kê Điểm danh (phục vụ Attitude)
     var presentCount = 0;
+    var lateCount = 0;
     var leaveCount = 0;
     var halfLeaveCount = 0;
     var absentCount = 0;
@@ -1312,6 +1313,7 @@ function getAttitudeEvaluation(weekFromDate) {
       var st = (mAtt[a].Status || '').trim();
       var dem = (mAtt[a].Demeanor || '').trim();
       if (st === 'Có mặt') presentCount++;
+      else if (st === 'Đi muộn') lateCount++;
       else if (st === 'Nghỉ phép') leaveCount++;
       else if (st === 'Nghỉ nửa ngày') halfLeaveCount++;
       else if (st === 'Nghỉ không phép' || st === 'Vắng mặt') absentCount++;
@@ -1320,6 +1322,9 @@ function getAttitudeEvaluation(weekFromDate) {
       if (mAtt[a].Note && mAtt[a].Note.trim() !== '') {
         notes.push(mAtt[a].Note.trim());
       }
+    }
+    if (lateCount > 0) {
+      notes.push('Đi muộn: ' + lateCount + ' lần');
     }
 
     // 2. Thống kê Nhật ký sản lượng & giờ làm (phục vụ Skill)
@@ -1358,10 +1363,11 @@ function getAttitudeEvaluation(weekFromDate) {
     else if (mb.Role === 'Annotator + QC') autoAttScore = 96;
     
     if (absentCount > 0) autoAttScore -= (absentCount * 20);
+    if (lateCount > 0) autoAttScore -= (lateCount * 5);
     if (demeanorFailCount > 0) autoAttScore -= (demeanorFailCount * 12);
     if (leaveCount > 0) autoAttScore -= (leaveCount * 3);
     if (halfLeaveCount > 0) autoAttScore -= (halfLeaveCount * 2);
-    if (presentCount >= 5 && absentCount === 0 && demeanorFailCount === 0) autoAttScore += 2;
+    if (presentCount >= 5 && absentCount === 0 && lateCount === 0 && demeanorFailCount === 0) autoAttScore += 2;
     autoAttScore = Math.max(30, Math.min(100, Math.round(autoAttScore)));
 
     var attLevelObj = classifyEvaluationScore(autoAttScore);

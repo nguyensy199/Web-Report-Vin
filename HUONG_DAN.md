@@ -101,6 +101,12 @@ Trên trình soạn thảo Apps Script, bạn tạo 5 file Code (.gs) và 3 file
      - 🏷️ **Annotator**: Thành viên gán nhãn dữ liệu.
    - Trang quản lý role cho phép Team Lead trực tiếp điều chỉnh vai trò của bất kỳ ai trong 10 thành viên và bấm "Lưu Thay Đổi Phân Quyền".
 
+3B. **Mẫu Báo Cáo Ngày Chuẩn Form (9 Cột)**:
+   - Khi chuyển sang **Báo Cáo Ngày**, hệ thống hiển thị và xuất ra Google Sheet đúng chuẩn 9 cột:
+     STT | Họ và tên | Vai trò | Trạng thái đi làm | Nhiệm vụ chi tiết | Số lần Rework | Trạng thái job | Số id đã sửa | Đánh giá QC.
+   - **Trạng thái job**: Phân biệt màu sắc trực quan: Complete (xanh lá nhạt) và Đang rework (xanh lam nhạt).
+   - Cho phép chỉnh sửa trực tiếp các trường trên web và xuất thẳng ra Google Sheet đồng bộ.
+
 4. **Trang Điểm Danh Đội Ngũ & Đánh Giá Tác Phong**:
    - Chọn ngày điểm danh linh hoạt theo lịch làm việc.
    - Bảng điểm danh 10 thành viên với các cột chi tiết:

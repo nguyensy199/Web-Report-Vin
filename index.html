@@ -595,7 +595,7 @@
               </div>
               <div class="table-responsive">
                 <table class="data-table">
-                  <thead>
+                  <thead id="rptMembersTableHead">
                     <tr>
                       <th style="width:50px;text-align:center;">Hạng</th>
                       <th>Họ và tên</th>
@@ -604,7 +604,6 @@
                       <th style="text-align:right;">Sản lượng (Cuboid)</th>
                       <th style="text-align:right;">Chỉ tiêu (Target)</th>
                       <th style="text-align:center;">% Target</th>
-                      <th style="text-align:center;">Độ chính xác</th>
                       <th style="text-align:center;">Giờ làm</th>
                       <th style="text-align:center;">Năng suất/h</th>
                       <th style="text-align:center; min-width:90px;" title="Click vào ô để sửa số lần Rework">Rework ✏️</th>
@@ -612,7 +611,7 @@
                     </tr>
                   </thead>
                   <tbody id="rptMembersDetailBody">
-                    <tr><td colspan="12" style="text-align:center;padding:24px;">Đang tải danh sách thành viên...</td></tr>
+                    <tr><td colspan="11" style="text-align:center;padding:24px;">Đang tải danh sách thành viên...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -760,8 +759,13 @@
               <div class="kpi-trend">Thành viên đi làm</div>
             </div>
             <div class="kpi-card">
+              <div class="kpi-title"><span>Đi Muộn</span><span>⏰</span></div>
+              <div class="kpi-value" id="attStatLate" style="color:var(--warning);">0</div>
+              <div class="kpi-trend">Đến trễ giờ</div>
+            </div>
+            <div class="kpi-card">
               <div class="kpi-title"><span>Nghỉ Phép / Nửa Ngày</span><span>🏖️</span></div>
-              <div class="kpi-value" id="attStatLeave" style="color:var(--warning);">0</div>
+              <div class="kpi-value" id="attStatLeave" style="color:#60a5fa;">0</div>
               <div class="kpi-trend">Có phép / Nửa ngày</div>
             </div>
             <div class="kpi-card">

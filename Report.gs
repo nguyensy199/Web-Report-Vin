@@ -298,15 +298,42 @@ function generateDailyReportDetails(dateStr) {
     // Đếm lỗi của thành viên trong ngày
     var mErrCount = dayErrors.filter(function(e) { return e.MemberID === mb.MemberID; }).length;
 
-    // Trạng thái chuyên cần ngày
+    // Trạng thái đi làm ngày
     var attStatus = dayAttMap[mb.MemberID] || (out > 0 ? 'Có mặt' : 'Chưa điểm danh');
+    var workStatus = 'Đi làm';
+    if (attStatus === 'Có mặt') workStatus = 'Đi làm';
+    else if (attStatus === 'Đi muộn') workStatus = 'Đi muộn';
+    else if (attStatus === 'Nghỉ phép') workStatus = 'Nghỉ phép';
+    else if (attStatus === 'Nghỉ nửa ngày') workStatus = 'Nghỉ nửa ngày';
+    else if (attStatus === 'Vắng mặt' || attStatus === 'Nghỉ không phép') workStatus = 'Vắng mặt';
+    else if (out > 0) workStatus = 'Đi làm';
+    else workStatus = 'Chưa điểm danh';
+
+    // Nhiệm vụ chi tiết (từ nhật ký log nếu có)
+    var taskDetail = (mLog && mLog.Note) ? mLog.Note : '';
+
+    // Trạng thái job: 'Complete' hoặc 'Đang rework'
+    var jobStatus = 'Đang rework';
+    if (mLog && /hoàn thành|complete|xong/i.test(mLog.Note)) {
+      jobStatus = 'Complete';
+    } else if (out >= tgt && rwk === 0) {
+      jobStatus = 'Complete';
+    } else if (rwk > 0) {
+      jobStatus = 'Đang rework';
+    }
 
     memberRows.push({
+      stt: m + 1,
       memberId: mb.MemberID,
       memberName: mb.FullName,
       role: mb.Role || 'Annotator',
       attendance: attStatus,
       attendanceTooltip: attStatus,
+      workStatus: workStatus,
+      taskDetail: taskDetail,
+      jobStatus: jobStatus,
+      fixedIds: '',
+      qcEvaluation: '',
       output: out,
       target: tgt,
       targetCompletionRate: parseFloat(pct.toFixed(1)),
@@ -319,8 +346,7 @@ function generateDailyReportDetails(dateStr) {
     });
   }
 
-  // Sắp xếp theo sản lượng giảm dần và gán rank
-  memberRows.sort(function(a, b) { return b.output - a.output; });
+  // Gán rank theo thứ tự
   for (var r = 0; r < memberRows.length; r++) {
     memberRows[r].rank = r + 1;
   }
@@ -520,10 +546,11 @@ function generateWeeklyReportDetails(weekDateOrStr) {
     var at = weekAtt[ai];
     var mId = at.MemberID;
     if (!memberAttMap[mId]) {
-      memberAttMap[mId] = { present: 0, halfLeave: 0, leave: 0, absent: 0, days: {} };
+      memberAttMap[mId] = { present: 0, late: 0, halfLeave: 0, leave: 0, absent: 0, days: {} };
     }
     var st = (at.Status || 'Có mặt').trim();
     if (st === 'Có mặt') memberAttMap[mId].present++;
+    else if (st === 'Đi muộn') memberAttMap[mId].late++;
     else if (st === 'Nghỉ nửa ngày') memberAttMap[mId].halfLeave++;
     else if (st === 'Nghỉ phép') memberAttMap[mId].leave++;
     else if (st === 'Vắng mặt' || st === 'Nghỉ không phép') memberAttMap[mId].absent++;
@@ -550,22 +577,54 @@ function generateWeeklyReportDetails(weekDateOrStr) {
     var memId = rMem.memberId;
     var attStat = memberAttMap[memId];
 
+    // 3a. Cộng dồn sản lượng và chỉ tiêu từng ngày trong tuần của thành viên từ weekLogs
+    var mLogs = weekLogs.filter(function(l) { return l.MemberID === memId; });
+    var sumOut = 0;
+    var sumTgt = 0;
+    var sumHrs = 0;
+    var sumRwk = 0;
+
+    var mbInfo = members.find(function(m) { return m.MemberID === memId; });
+    var defaultDailyTarget = mbInfo ? parseFloat(mbInfo.DailyTarget || 20) : 20;
+
+    for (var ml = 0; ml < mLogs.length; ml++) {
+      var logOut = parseFloat(mLogs[ml].Output || 0);
+      var logTgt = parseFloat(mLogs[ml].TargetPerDay || 0);
+      if (logTgt <= 0) logTgt = defaultDailyTarget;
+      var logHrs = parseFloat(mLogs[ml].WorkHours || 0);
+      var logRwk = parseFloat(mLogs[ml].ReworkCount || 0);
+
+      sumOut += logOut;
+      sumTgt += logTgt;
+      sumHrs += logHrs;
+      sumRwk += logRwk;
+    }
+
+    rMem.output = sumOut;
+    rMem.target = sumTgt;
+    rMem.hours = sumHrs;
+    rMem.rework = sumRwk;
+    rMem.targetCompletionRate = sumTgt > 0 ? parseFloat((sumOut / sumTgt * 100).toFixed(1)) : 0;
+    rMem.productivity = sumHrs > 0 ? parseFloat((sumOut / sumHrs).toFixed(1)) : 0;
+
     var pCount = attStat ? attStat.present : 0;
+    var lateCount = attStat ? (attStat.late || 0) : 0;
     var hCount = attStat ? attStat.halfLeave : 0;
     var lCount = attStat ? attStat.leave : 0;
     var aCount = attStat ? attStat.absent : 0;
 
     // Nếu chưa điểm danh qua sheet Attendance, fallback vào số ngày có log làm việc
-    if (!attStat || (pCount === 0 && hCount === 0 && lCount === 0 && aCount === 0)) {
+    if (!attStat || (pCount === 0 && lateCount === 0 && hCount === 0 && lCount === 0 && aCount === 0)) {
       var logDays = memberLogDaysMap[memId] ? Object.keys(memberLogDaysMap[memId]).length : (rMem.totalDaysWithLogs || 0);
       pCount = logDays;
     }
 
-    var effectiveDays = pCount + (hCount * 0.5);
+    var effectiveDays = pCount + lateCount + (hCount * 0.5);
     var attRate = standardWorkDays > 0 ? Math.min(100, Math.round(effectiveDays / standardWorkDays * 100)) : 100;
 
     var detailParts = [];
     if (pCount > 0) detailParts.push('Có mặt: ' + pCount);
+    if (lateCount > 0) detailParts.push('Đi muộn: ' + lateCount);
     if (hCount > 0) detailParts.push('Nửa ngày: ' + hCount);
     if (lCount > 0) detailParts.push('Phép: ' + lCount);
     if (aCount > 0) detailParts.push('Vắng: ' + aCount);
@@ -578,6 +637,31 @@ function generateWeeklyReportDetails(weekDateOrStr) {
     rMem.attendanceEffectiveDays = effectiveDays;
     rMem.attendanceTooltip = attTooltip;
   }
+
+  // Sắp xếp lại thứ hạng theo sản lượng tuần giảm dần
+  rankingData.rankings.sort(function(a, b) { return b.output - a.output; });
+  for (var rkR = 0; rkR < rankingData.rankings.length; rkR++) {
+    rankingData.rankings[rkR].rank = rkR + 1;
+  }
+
+  // Cập nhật lại tổng quan tuần từ tổng các thành viên
+  var totalWeekOut = 0;
+  var totalWeekTgt = 0;
+  var totalWeekHrs = 0;
+  var totalWeekRwk = 0;
+  for (var wIdx = 0; wIdx < rankingData.rankings.length; wIdx++) {
+    totalWeekOut += rankingData.rankings[wIdx].output;
+    totalWeekTgt += rankingData.rankings[wIdx].target;
+    totalWeekHrs += rankingData.rankings[wIdx].hours;
+    totalWeekRwk += rankingData.rankings[wIdx].rework;
+  }
+  currOverview.totalOutput = totalWeekOut;
+  currOverview.totalTarget = totalWeekTgt;
+  currOverview.totalHours = totalWeekHrs;
+  currOverview.totalRework = totalWeekRwk;
+  currOverview.totalErrorCount = totalWeekRwk;
+  currOverview.targetCompletionRate = totalWeekTgt > 0 ? parseFloat((totalWeekOut / totalWeekTgt * 100).toFixed(1)) : 0;
+  currOverview.avgProductivity = totalWeekHrs > 0 ? parseFloat((totalWeekOut / totalWeekHrs).toFixed(1)) : 0;
 
   // 4. Phân tích nguyên nhân Rework / Lỗi theo Pareto (80/20)
   var topErrors = analyzeTopErrors(weekErrors);
@@ -742,13 +826,109 @@ function exportReportToSpreadsheet(mode, periodVal, customData) {
 
   var newSpreadsheet = SpreadsheetApp.create(fileName);
   var sheet = newSpreadsheet.getActiveSheet();
-  sheet.setName(isWeek ? 'Báo Cáo Tuần' : 'Báo Cáo Nghiệm Thu Ngày');
+
+  // ==========================================================================
+  // A. XUẤT BÁO CÁO NGÀY (THEO ĐÚNG MẪU 9 CỘT VINFAST ANNOTATION)
+  // ==========================================================================
+  if (!isWeek) {
+    sheet.setName('Báo Cáo Ngày ' + (data.date || periodVal));
+    sheet.getRange('A1:I100').setFontFamily('Google Sans');
+
+    var dayHeaders = [
+      'STT', 'Họ và tên', 'Vai trò', 'Trạng thái đi làm', 'Nhiệm vụ chi tiết', 'Số lần Rework', 'Trạng thái job', 'Số id đã sửa', 'Đánh giá QC'
+    ];
+
+    sheet.getRange(1, 1, 1, 9).setValues([dayHeaders])
+      .setBackground('#17375e')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+    sheet.setRowHeight(1, 32);
+
+    var rows = [];
+    var rankings = data.rankings || [];
+    for (var i = 0; i < rankings.length; i++) {
+      var rk = rankings[i];
+      var rwkVal = (rk.rework !== undefined && rk.rework !== null && rk.rework !== '') ? rk.rework : (rk.errorCount || '');
+      if (rwkVal === 0) rwkVal = ''; // Nếu 0 thì để trống giống mẫu
+      
+      rows.push([
+        i + 1,
+        rk.memberName,
+        rk.role || 'Annotator',
+        rk.workStatus || 'Đi làm',
+        rk.taskDetail || '',
+        rwkVal,
+        rk.jobStatus || 'Đang rework',
+        rk.fixedIds || '',
+        rk.qcEvaluation || ''
+      ]);
+    }
+
+    if (rows.length > 0) {
+      var dataRange = sheet.getRange(2, 1, rows.length, 9);
+      dataRange.setValues(rows);
+      dataRange.setVerticalAlignment('middle');
+
+      // Căn lề từng cột
+      sheet.getRange(2, 1, rows.length, 1).setHorizontalAlignment('center'); // STT
+      sheet.getRange(2, 2, rows.length, 1).setHorizontalAlignment('left');   // Họ tên
+      sheet.getRange(2, 3, rows.length, 1).setHorizontalAlignment('center'); // Vai trò
+      sheet.getRange(2, 4, rows.length, 1).setHorizontalAlignment('center'); // Trạng thái đi làm
+      sheet.getRange(2, 5, rows.length, 1).setHorizontalAlignment('left').setWrap(true); // Nhiệm vụ chi tiết
+      sheet.getRange(2, 6, rows.length, 1).setHorizontalAlignment('center'); // Số lần Rework
+      sheet.getRange(2, 7, rows.length, 1).setHorizontalAlignment('center'); // Trạng thái job
+      sheet.getRange(2, 8, rows.length, 1).setHorizontalAlignment('center'); // Số id đã sửa
+      sheet.getRange(2, 9, rows.length, 1).setHorizontalAlignment('left').setWrap(true); // Đánh giá QC
+
+      // Format màu nền cho cột Trạng thái job (Cột G)
+      for (var rIdx = 0; rIdx < rows.length; rIdx++) {
+        var jStatus = String(rows[rIdx][6] || '').trim().toLowerCase();
+        var cellG = sheet.getRange(rIdx + 2, 7);
+        if (jStatus === 'complete' || jStatus === 'hoàn thành') {
+          cellG.setBackground('#e2efda').setFontColor('#375623').setFontWeight('bold');
+        } else if (jStatus.indexOf('rework') !== -1) {
+          cellG.setBackground('#d9e2f3').setFontColor('#1f4e78');
+        }
+        sheet.setRowHeight(rIdx + 2, 28);
+      }
+
+      // Viền kẻ bảng đầy đủ
+      sheet.getRange(1, 1, rows.length + 1, 9).setBorder(true, true, true, true, true, true, '#b0bec5', SpreadsheetApp.BorderStyle.SOLID);
+    }
+
+    // Set độ rộng từng cột đúng tỷ lệ mẫu
+    sheet.setColumnWidth(1, 55);   // STT
+    sheet.setColumnWidth(2, 170);  // Họ và tên
+    sheet.setColumnWidth(3, 110);  // Vai trò
+    sheet.setColumnWidth(4, 130);  // Trạng thái đi làm
+    sheet.setColumnWidth(5, 260);  // Nhiệm vụ chi tiết
+    sheet.setColumnWidth(6, 110);  // Số lần Rework
+    sheet.setColumnWidth(7, 130);  // Trạng thái job
+    sheet.setColumnWidth(8, 110);  // Số id đã sửa
+    sheet.setColumnWidth(9, 180);  // Đánh giá QC
+
+    sheet.setFrozenRows(1);
+
+    return {
+      success: true,
+      fileUrl: newSpreadsheet.getUrl(),
+      fileName: fileName,
+      message: 'Đã tạo file Google Sheet Báo Cáo Ngày thành công theo đúng mẫu!'
+    };
+  }
+
+  // ==========================================================================
+  // B. XUẤT BÁO CÁO TUẦN (11 CỘT TỔNG HỢP SẢN LƯỢNG & KPI & CHUYÊN CẦN)
+  // ==========================================================================
+  sheet.setName('Báo Cáo Tuần');
 
   // Thiết lập font chữ Google Sans
-  sheet.getRange('A1:L180').setFontFamily('Google Sans');
+  sheet.getRange('A1:K180').setFontFamily('Google Sans');
 
   // Header Tiêu đề chính
-  sheet.getRange('A1:L1').merge();
+  sheet.getRange('A1:K1').merge();
   sheet.getRange('A1').setValue(data.title.toUpperCase())
     .setFontSize(14).setFontWeight('bold')
     .setBackground('#1e293b').setFontColor('#ffffff')
@@ -775,13 +955,13 @@ function exportReportToSpreadsheet(mode, periodVal, customData) {
     totalRwk
   ]]).setHorizontalAlignment('center').setFontWeight('bold').setBackground('#f8fafc');
 
-  // Khối Bảng Báo Cáo Chi Tiết Từng Thành Viên
-  sheet.getRange('A9:L9').merge();
+  // Khối Bảng Báo Cáo Chi Tiết Từng Thành Viên (11 cột - đã bỏ Accuracy)
+  sheet.getRange('A9:K9').merge();
   sheet.getRange('A9').setValue('BÁO CÁO CHI TIẾT SẢN LƯỢNG & KPI TỪNG THÀNH VIÊN')
     .setFontWeight('bold').setBackground('#f1f5f9').setHorizontalAlignment('left');
 
-  sheet.getRange('A10:L10').setValues([[
-    'Hạng', 'Họ và tên', 'Vai trò', 'Chuyên cần', 'Sản lượng (Cuboid)', 'Chỉ tiêu (Target)', '% Hoàn thành', 'Accuracy (%)', 'Giờ làm', 'Năng suất/h', 'Rework', 'Đánh giá'
+  sheet.getRange('A10:K10').setValues([[
+    'Hạng', 'Họ và tên', 'Vai trò', 'Chuyên cần', 'Sản lượng (Cuboid)', 'Chỉ tiêu (Target)', '% Hoàn thành', 'Giờ làm', 'Năng suất/h', 'Rework', 'Đánh giá'
   ]]).setBackground('#0f172a').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
 
   var memberRows = [];
@@ -789,7 +969,7 @@ function exportReportToSpreadsheet(mode, periodVal, customData) {
   for (var i = 0; i < rankings.length; i++) {
     var r = rankings[i];
     var evalText = 'Đạt yêu cầu';
-    if (r.targetCompletionRate >= 100 && r.accuracy >= 96) {
+    if (r.targetCompletionRate >= 100) {
       evalText = 'Xuất sắc';
     } else if (r.targetCompletionRate < 85) {
       evalText = 'Dưới định mức';
@@ -806,7 +986,6 @@ function exportReportToSpreadsheet(mode, periodVal, customData) {
       r.output,
       r.target,
       r.targetCompletionRate + '%',
-      r.accuracy + '%',
       (r.hours ? r.hours.toFixed(1) : 0) + 'h',
       r.productivity,
       reworkVal,
@@ -816,14 +995,14 @@ function exportReportToSpreadsheet(mode, periodVal, customData) {
 
   var startRow = 11;
   if (memberRows.length > 0) {
-    sheet.getRange(startRow, 1, memberRows.length, 12).setValues(memberRows);
+    sheet.getRange(startRow, 1, memberRows.length, 11).setValues(memberRows);
     sheet.getRange(startRow, 1, memberRows.length, 1).setHorizontalAlignment('center');
     sheet.getRange(startRow, 3, memberRows.length, 2).setHorizontalAlignment('center');
     sheet.getRange(startRow, 5, memberRows.length, 2).setHorizontalAlignment('right').setNumberFormat('#,##0');
-    sheet.getRange(startRow, 7, memberRows.length, 6).setHorizontalAlignment('center');
+    sheet.getRange(startRow, 7, memberRows.length, 5).setHorizontalAlignment('center');
 
     // Viền khung
-    sheet.getRange(10, 1, memberRows.length + 1, 12).setBorder(true, true, true, true, true, true);
+    sheet.getRange(10, 1, memberRows.length + 1, 11).setBorder(true, true, true, true, true, true);
     startRow += memberRows.length + 2;
   }
 
@@ -902,7 +1081,7 @@ function exportReportToSpreadsheet(mode, periodVal, customData) {
   }
 
   // Tự động căn chỉnh độ rộng cột
-  sheet.autoResizeColumns(1, 12);
+  sheet.autoResizeColumns(1, 11);
 
   return {
     success: true,

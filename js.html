@@ -1987,67 +1987,154 @@ function renderReportView(data) {
   document.getElementById('rptTotalErrors').innerText = totalRwk;
 
   // 2. Bảng Chi Tiết Từng Thành Viên
+  var memHead = document.getElementById('rptMembersTableHead');
   var memBody = document.getElementById('rptMembersDetailBody');
+  var isDayMode = (currentReportPeriodMode === 'DAY');
+
+  if (memHead) {
+    if (isDayMode) {
+      memHead.innerHTML = '<tr>'
+        + '<th style="width:50px;text-align:center;">STT</th>'
+        + '<th style="min-width:150px;">Họ và tên</th>'
+        + '<th style="width:110px;text-align:center;">Vai trò</th>'
+        + '<th style="width:120px;text-align:center;">Trạng thái đi làm</th>'
+        + '<th style="min-width:220px;">Nhiệm vụ chi tiết</th>'
+        + '<th style="width:110px;text-align:center;" title="Click vào ô để sửa số lần Rework">Số lần Rework ✏️</th>'
+        + '<th style="width:130px;text-align:center;">Trạng thái job</th>'
+        + '<th style="width:105px;text-align:center;">Số id đã sửa</th>'
+        + '<th style="min-width:150px;">Đánh giá QC</th>'
+        + '</tr>';
+    } else {
+      memHead.innerHTML = '<tr>'
+        + '<th style="width:50px;text-align:center;">Hạng</th>'
+        + '<th>Họ và tên</th>'
+        + '<th>Vai trò</th>'
+        + '<th style="text-align:center; min-width:110px;">Chuyên cần</th>'
+        + '<th style="text-align:right;">Sản lượng (Cuboid)</th>'
+        + '<th style="text-align:right;">Chỉ tiêu (Target)</th>'
+        + '<th style="text-align:center;">% Target</th>'
+        + '<th style="text-align:center;">Giờ làm</th>'
+        + '<th style="text-align:center;">Năng suất/h</th>'
+        + '<th style="text-align:center; min-width:90px;" title="Click vào ô để sửa số lần Rework">Rework ✏️</th>'
+        + '<th style="text-align:center;">Đánh giá</th>'
+        + '</tr>';
+    }
+  }
+
   if (memBody && data.rankings) {
     var mHtml = '';
-    for (var m = 0; m < data.rankings.length; m++) {
-      var rk = data.rankings[m];
-      var statusBadge = '';
-      if (rk.targetCompletionRate >= 100 && rk.accuracy >= 96) {
-        statusBadge = '<span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;">Xuất sắc</span>';
-      } else if (rk.targetCompletionRate >= 85) {
-        statusBadge = '<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;">Đạt yêu cầu</span>';
-      } else {
-        statusBadge = '<span class="badge" style="background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;">Dưới định mức</span>';
+
+    if (isDayMode) {
+      // ----------------------------------------------------------------------
+      // MẪU BÁO CÁO NGÀY (9 CỘT THEO ĐÚNG CHUẨN GOOGLE SHEET VINFAST ANNOTATION)
+      // ----------------------------------------------------------------------
+      for (var d = 0; d < data.rankings.length; d++) {
+        var dr = data.rankings[d];
+        var stt = dr.stt || (d + 1);
+        var workSt = dr.workStatus || (dr.attendance === 'Có mặt' ? 'Đi làm' : (dr.attendance || 'Đi làm'));
+        var taskDet = (dr.taskDetail !== undefined && dr.taskDetail !== null) ? dr.taskDetail : '';
+        var rwkVal = (dr.rework !== undefined && dr.rework !== null && dr.rework !== '') ? dr.rework : '';
+        var jobSt = dr.jobStatus || (rwkVal > 0 ? 'Đang rework' : 'Complete');
+        var fixedIds = (dr.fixedIds !== undefined && dr.fixedIds !== null) ? dr.fixedIds : '';
+        var qcEval = (dr.qcEvaluation !== undefined && dr.qcEvaluation !== null) ? dr.qcEvaluation : '';
+
+        var workBadgeStyle = 'background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;';
+        if (workSt === 'Đi muộn') {
+          workBadgeStyle = 'background:rgba(245,158,11,0.15);color:var(--warning);font-weight:700;';
+        } else if (workSt.indexOf('Nghỉ') !== -1 || workSt === 'Vắng mặt') {
+          workBadgeStyle = 'background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;';
+        }
+
+        // Tùy biến style cho ô Trạng thái job: 'Complete' (xanh lá nhạt) hoặc 'Đang rework' (xanh lam nhạt)
+        var isComp = (jobSt === 'Complete' || jobSt === 'Hoàn thành');
+        var jobSelectStyle = isComp
+          ? 'background:rgba(16,185,129,0.2);color:#34d399;font-weight:700;border:1px solid rgba(16,185,129,0.4);'
+          : 'background:rgba(59,130,246,0.2);color:#93c5fd;font-weight:700;border:1px solid rgba(59,130,246,0.4);';
+
+        var optReworkSel = (!isComp) ? 'selected' : '';
+        var optCompleteSel = (isComp) ? 'selected' : '';
+
+        mHtml += '<tr>'
+          + '<td style="text-align:center;font-weight:700;">' + stt + '</td>'
+          + '<td><strong>' + dr.memberName + '</strong></td>'
+          + '<td style="text-align:center;"><span class="badge" style="background:var(--bg-elevated);color:var(--text-secondary);">' + (dr.role || 'Annotator') + '</span></td>'
+          + '<td style="text-align:center;"><span class="badge" style="' + workBadgeStyle + '">' + workSt + '</span></td>'
+          + '<td><input type="text" class="form-input form-input-sm" value="' + String(taskDet).replace(/"/g, '&quot;') + '" placeholder="Nhiệm vụ, Task ID / Job ID..." onchange="handleDailyReportFieldChange(this, \'taskDetail\', ' + d + ')" style="width:100%;"></td>'
+          + '<td style="text-align:center;"><input type="number" min="0" class="rework-inline-input" value="' + rwkVal + '" onchange="handleDailyReportReworkChange(this, ' + d + ')" placeholder="-" style="width:58px;height:28px;text-align:center;font-weight:700;border-radius:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:' + (rwkVal > 0 ? '#ef4444' : 'var(--text-muted)') + ';"></td>'
+          + '<td style="text-align:center;">'
+            + '<select class="form-select form-select-sm" id="dailyJobStatusSelect_' + d + '" onchange="handleDailyReportJobStatusChange(this, ' + d + ')" style="font-size:12px;padding:3px 6px;border-radius:6px;width:100%;cursor:pointer;' + jobSelectStyle + '">'
+              + '<option value="Đang rework" ' + optReworkSel + '>Đang rework</option>'
+              + '<option value="Complete" ' + optCompleteSel + '>Complete</option>'
+            + '</select>'
+          + '</td>'
+          + '<td style="text-align:center;"><input type="text" class="form-input form-input-sm" value="' + String(fixedIds).replace(/"/g, '&quot;') + '" placeholder="Số ID..." onchange="handleDailyReportFieldChange(this, \'fixedIds\', ' + d + ')" style="width:75px;text-align:center;"></td>'
+          + '<td><input type="text" class="form-input form-input-sm" value="' + String(qcEval).replace(/"/g, '&quot;') + '" placeholder="Đánh giá QC..." onchange="handleDailyReportFieldChange(this, \'qcEvaluation\', ' + d + ')" style="width:100%;"></td>'
+          + '</tr>';
       }
-
-      var medal = (rk.rank === 1 ? '🥇 ' : rk.rank === 2 ? '🥈 ' : rk.rank === 3 ? '🥉 ' : '');
-      var reworkVal = (rk.rework !== undefined) ? rk.rework : (rk.errorCount || 0);
-
-      // Badge Chuyên cần
-      var attVal = rk.attendance || '--';
-      var attTooltip = rk.attendanceTooltip ? (' title="' + rk.attendanceTooltip.replace(/"/g, '&quot;') + '"') : '';
-      var attBadgeStyle = 'background:var(--bg-elevated);color:var(--text-secondary);';
-      
-      if (rk.attendanceRate !== undefined) {
-        if (rk.attendanceRate >= 100) {
-          attBadgeStyle = 'background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;';
-        } else if (rk.attendanceRate >= 80) {
-          attBadgeStyle = 'background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;';
+    } else {
+      // ----------------------------------------------------------------------
+      // MẪU BÁO CÁO TUẦN (11 CỘT TỔNG HỢP SẢN LƯỢNG & KPI & CHUYÊN CẦN)
+      // ----------------------------------------------------------------------
+      for (var m = 0; m < data.rankings.length; m++) {
+        var rk = data.rankings[m];
+        var statusBadge = '';
+        if (rk.targetCompletionRate >= 100) {
+          statusBadge = '<span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;">Xuất sắc</span>';
+        } else if (rk.targetCompletionRate >= 85) {
+          statusBadge = '<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;">Đạt yêu cầu</span>';
         } else {
+          statusBadge = '<span class="badge" style="background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;">Dưới định mức</span>';
+        }
+
+        var medal = (rk.rank === 1 ? '🥇 ' : rk.rank === 2 ? '🥈 ' : rk.rank === 3 ? '🥉 ' : '');
+        var reworkVal = (rk.rework !== undefined) ? rk.rework : (rk.errorCount || 0);
+
+        // Badge Chuyên cần
+        var attVal = rk.attendance || '--';
+        var attTooltip = rk.attendanceTooltip ? (' title="' + rk.attendanceTooltip.replace(/"/g, '&quot;') + '"') : '';
+        var attBadgeStyle = 'background:var(--bg-elevated);color:var(--text-secondary);';
+        
+        if (rk.attendanceRate !== undefined) {
+          if (rk.attendanceRate >= 100) {
+            attBadgeStyle = 'background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;';
+          } else if (rk.attendanceRate >= 80) {
+            attBadgeStyle = 'background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;';
+          } else {
+            attBadgeStyle = 'background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;';
+          }
+        } else if (attVal === 'Có mặt') {
+          attBadgeStyle = 'background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;';
+        } else if (attVal === 'Đi muộn') {
+          attBadgeStyle = 'background:rgba(245,158,11,0.15);color:var(--warning);font-weight:700;';
+        } else if (attVal.indexOf('Nghỉ') !== -1 || attVal === 'Vắng mặt') {
           attBadgeStyle = 'background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;';
         }
-      } else if (attVal === 'Có mặt') {
-        attBadgeStyle = 'background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;';
-      } else if (attVal.indexOf('Nghỉ') !== -1 || attVal === 'Vắng mặt') {
-        attBadgeStyle = 'background:rgba(239,68,68,0.15);color:var(--danger);font-weight:700;';
+
+        var attCellHtml = '<td style="text-align:center;"><span class="badge" style="' + attBadgeStyle + 'cursor:help;"' + attTooltip + '>' + attVal + '</span></td>';
+
+        var reworkCellHtml = '<input type="number" min="0" class="rework-inline-input" '
+          + 'value="' + reworkVal + '" '
+          + 'data-index="' + m + '" '
+          + 'data-member-id="' + rk.memberId + '" '
+          + 'onfocus="this.select()" '
+          + 'onchange="handleReportReworkChange(this, ' + m + ')" '
+          + 'title="Click để nhập số lần Rework" '
+          + 'style="width:58px;height:30px;text-align:center;font-weight:800;font-size:13px;border-radius:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:' + (reworkVal > 0 ? '#ef4444' : 'var(--text-muted)') + ';cursor:pointer;">';
+
+        mHtml += '<tr>'
+          + '<td style="text-align:center;font-weight:800;">' + medal + rk.rank + '</td>'
+          + '<td><strong>' + rk.memberName + '</strong></td>'
+          + '<td><span class="badge" style="background:var(--bg-elevated);color:var(--text-secondary);">' + (rk.role || 'Annotator') + '</span></td>'
+          + attCellHtml
+          + '<td style="text-align:right;font-weight:800;color:var(--primary);">' + rk.output.toLocaleString('vi-VN') + '</td>'
+          + '<td style="text-align:right;">' + rk.target.toLocaleString('vi-VN') + '</td>'
+          + '<td style="text-align:center;font-weight:700;' + (rk.targetCompletionRate >= 100 ? 'color:var(--success);' : (rk.targetCompletionRate < 85 ? 'color:var(--danger);' : '')) + '">' + rk.targetCompletionRate + '%</td>'
+          + '<td style="text-align:center;">' + (rk.hours ? rk.hours.toFixed(1) : '0') + 'h</td>'
+          + '<td style="text-align:center;font-weight:600;">' + rk.productivity + '</td>'
+          + '<td style="text-align:center;">' + reworkCellHtml + '</td>'
+          + '<td style="text-align:center;" id="rptEvalCell_' + m + '">' + statusBadge + '</td>'
+          + '</tr>';
       }
-
-      var attCellHtml = '<td style="text-align:center;"><span class="badge" style="' + attBadgeStyle + 'cursor:help;"' + attTooltip + '>' + attVal + '</span></td>';
-
-      var reworkCellHtml = '<input type="number" min="0" class="rework-inline-input" '
-        + 'value="' + reworkVal + '" '
-        + 'data-index="' + m + '" '
-        + 'data-member-id="' + rk.memberId + '" '
-        + 'onfocus="this.select()" '
-        + 'onchange="handleReportReworkChange(this, ' + m + ')" '
-        + 'title="Click để nhập số lần Rework" '
-        + 'style="width:58px;height:30px;text-align:center;font-weight:800;font-size:13px;border-radius:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:' + (reworkVal > 0 ? '#ef4444' : 'var(--text-muted)') + ';cursor:pointer;">';
-
-      mHtml += '<tr>'
-        + '<td style="text-align:center;font-weight:800;">' + medal + rk.rank + '</td>'
-        + '<td><strong>' + rk.memberName + '</strong></td>'
-        + '<td><span class="badge" style="background:var(--bg-elevated);color:var(--text-secondary);">' + (rk.role || 'Annotator') + '</span></td>'
-        + attCellHtml
-        + '<td style="text-align:right;font-weight:800;color:var(--primary);">' + rk.output.toLocaleString('vi-VN') + '</td>'
-        + '<td style="text-align:right;">' + rk.target.toLocaleString('vi-VN') + '</td>'
-        + '<td style="text-align:center;font-weight:700;' + (rk.targetCompletionRate >= 100 ? 'color:var(--success);' : (rk.targetCompletionRate < 85 ? 'color:var(--danger);' : '')) + '">' + rk.targetCompletionRate + '%</td>'
-        + '<td style="text-align:center;font-weight:700;" id="rptAccCell_' + m + '">' + rk.accuracy + '%</td>'
-        + '<td style="text-align:center;">' + (rk.hours ? rk.hours.toFixed(1) : '0') + 'h</td>'
-        + '<td style="text-align:center;font-weight:600;">' + rk.productivity + '</td>'
-        + '<td style="text-align:center;">' + reworkCellHtml + '</td>'
-        + '<td style="text-align:center;" id="rptEvalCell_' + m + '">' + statusBadge + '</td>'
-        + '</tr>';
     }
     memBody.innerHTML = mHtml;
   }
@@ -2174,7 +2261,7 @@ function handleReportReworkChange(inputEl, memberIndex) {
   var evalCell = document.getElementById('rptEvalCell_' + memberIndex);
   if (evalCell) {
     var statusBadge = '';
-    if (rk.targetCompletionRate >= 100 && newAcc >= 96) {
+    if (rk.targetCompletionRate >= 100) {
       statusBadge = '<span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success);font-weight:700;">Xuất sắc</span>';
     } else if (rk.targetCompletionRate >= 85) {
       statusBadge = '<span class="badge" style="background:rgba(59,130,246,0.15);color:var(--primary);font-weight:700;">Đạt yêu cầu</span>';
@@ -2225,10 +2312,93 @@ function handleReportReworkChange(inputEl, memberIndex) {
 }
 
 /**
+ * Xử lý khi chỉnh sửa trường text của Báo Cáo Ngày (nhiệm vụ chi tiết, số id đã sửa, đánh giá QC)
+ */
+function handleDailyReportFieldChange(inputEl, fieldName, memberIndex) {
+  if (!currentReportData || !currentReportData.rankings) return;
+  var dr = currentReportData.rankings[memberIndex];
+  if (!dr) return;
+  dr[fieldName] = inputEl.value;
+}
+
+/**
+ * Xử lý khi thay đổi Trạng thái job trên Báo Cáo Ngày ('Đang rework' / 'Complete')
+ */
+function handleDailyReportJobStatusChange(selectEl, memberIndex) {
+  if (!currentReportData || !currentReportData.rankings) return;
+  var dr = currentReportData.rankings[memberIndex];
+  if (!dr) return;
+  var val = selectEl.value;
+  dr.jobStatus = val;
+
+  // Cập nhật style nền lập tức
+  if (val === 'Complete' || val === 'Hoàn thành') {
+    selectEl.style.background = 'rgba(16,185,129,0.2)';
+    selectEl.style.color = '#34d399';
+    selectEl.style.borderColor = 'rgba(16,185,129,0.4)';
+  } else {
+    selectEl.style.background = 'rgba(59,130,246,0.2)';
+    selectEl.style.color = '#93c5fd';
+    selectEl.style.borderColor = 'rgba(59,130,246,0.4)';
+  }
+}
+
+/**
+ * Xử lý khi chỉnh sửa số lần Rework trên Báo Cáo Ngày
+ */
+function handleDailyReportReworkChange(inputEl, memberIndex) {
+  if (!currentReportData || !currentReportData.rankings) return;
+  var dr = currentReportData.rankings[memberIndex];
+  if (!dr) return;
+
+  var val = inputEl.value.trim() === '' ? '' : parseInt(inputEl.value, 10);
+  if (val !== '' && (isNaN(val) || val < 0)) val = 0;
+  inputEl.value = val;
+  dr.rework = val;
+  dr.errorCount = (val === '' ? 0 : val);
+
+  // Nếu có rework và jobStatus đang là Complete, tự động chuyển gợi ý sang Đang rework
+  if (val > 0) {
+    dr.jobStatus = 'Đang rework';
+    var sel = document.getElementById('dailyJobStatusSelect_' + memberIndex);
+    if (sel) {
+      sel.value = 'Đang rework';
+      sel.style.background = 'rgba(59,130,246,0.2)';
+      sel.style.color = '#93c5fd';
+      sel.style.borderColor = 'rgba(59,130,246,0.4)';
+    }
+  }
+
+  inputEl.style.color = (val > 0 ? '#ef4444' : 'var(--text-muted)');
+}
+
+/**
  * Sao chép text báo cáo chi tiết vào bộ nhớ tạm
  */
 function copyReportText() {
   if (!currentReportData) return;
+
+  // Trường hợp Báo Cáo Ngày (format 9 cột chuyên biệt)
+  if (currentReportPeriodMode === 'DAY') {
+    var textDay = '📋 ' + currentReportData.title + '\n'
+      + '===================================\n';
+    var dRankings = currentReportData.rankings || [];
+    for (var di = 0; di < dRankings.length; di++) {
+      var dh = dRankings[di];
+      var rkStt = dh.stt || (di + 1);
+      var wSt = dh.workStatus || (dh.attendance === 'Có mặt' ? 'Đi làm' : (dh.attendance || 'Đi làm'));
+      var jSt = dh.jobStatus || (dh.rework > 0 ? 'Đang rework' : 'Complete');
+      var rwkStr = (dh.rework !== undefined && dh.rework !== '') ? (' | Rework: ' + dh.rework) : '';
+      var taskStr = dh.taskDetail ? (' | NV: ' + dh.taskDetail) : '';
+      var idStr = dh.fixedIds ? (' | Đã sửa: ' + dh.fixedIds + ' ID') : '';
+      var qcStr = dh.qcEvaluation ? (' | QC: ' + dh.qcEvaluation) : '';
+      textDay += rkStt + '. ' + dh.memberName + ' (' + (dh.role || 'Annotator') + ') - ' + wSt + ' - [' + jSt + ']' + rwkStr + taskStr + idStr + qcStr + '\n';
+    }
+    navigator.clipboard.writeText(textDay).then(function() {
+      showToast('Đã sao chép nội dung báo cáo ngày vào bộ nhớ tạm!', 'success');
+    });
+    return;
+  }
 
   var totalRework = currentReportData.overview.totalRework !== undefined 
     ? currentReportData.overview.totalRework 
@@ -2249,7 +2419,7 @@ function copyReportText() {
     var attStr = h.attendance ? (' - Chuyên cần: ' + h.attendance) : '';
     text += h.rank + '. ' + h.memberName + ' (' + (h.role || 'Annotator') + ')' + attStr + ': ' 
       + h.output.toLocaleString('vi-VN') + ' Cuboid / ' + h.target.toLocaleString('vi-VN') + ' Target (' 
-      + h.targetCompletionRate + '%) - Rework: ' + rVal + ' - Accuracy: ' + h.accuracy + '%\n';
+      + h.targetCompletionRate + '%) - Rework: ' + rVal + '\n';
   }
 
   // Thêm Top nguyên nhân Rework / Lỗi (Pareto 80/20)
@@ -2437,7 +2607,7 @@ function renderAttendanceTable(data) {
 
   if (!tbody) return;
 
-  var statusOptions = ['Có mặt', 'Vắng mặt', 'Nghỉ phép', 'Nghỉ không phép', 'Nghỉ nửa ngày'];
+  var statusOptions = ['Có mặt', 'Đi muộn', 'Nghỉ phép', 'Nghỉ nửa ngày', 'Nghỉ không phép', 'Vắng mặt'];
   var demeanorOptions = ['Đạt', 'Không đạt'];
 
   var html = '';
@@ -2497,6 +2667,7 @@ function recalcAttendanceStats() {
   var demSelects = document.querySelectorAll('.att-dem-select');
 
   var presentCount = 0;
+  var lateCount = 0;
   var leaveCount = 0;
   var absentCount = 0;
   var demFailCount = 0;
@@ -2505,6 +2676,7 @@ function recalcAttendanceStats() {
   statusSelects.forEach(function(sel) {
     var v = sel.value;
     if (v === 'Có mặt') presentCount++;
+    else if (v === 'Đi muộn') lateCount++;
     else if (v === 'Nghỉ phép' || v === 'Nghỉ nửa ngày') leaveCount++;
     else if (v === 'Vắng mặt' || v === 'Nghỉ không phép') absentCount++;
   });
@@ -2514,11 +2686,13 @@ function recalcAttendanceStats() {
   });
 
   var elP = document.getElementById('attStatPresent');
+  var elLate = document.getElementById('attStatLate');
   var elL = document.getElementById('attStatLeave');
   var elA = document.getElementById('attStatAbsent');
   var elD = document.getElementById('attStatDemeanorFail');
 
   if (elP) elP.innerText = presentCount + ' / ' + total;
+  if (elLate) elLate.innerText = lateCount;
   if (elL) elL.innerText = leaveCount;
   if (elA) elA.innerText = absentCount;
   if (elD) elD.innerText = demFailCount;
