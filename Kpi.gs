@@ -199,18 +199,26 @@ function calculateMetricsSummary(logs, errors, membersList) {
     var hrs = parseFloat(l.WorkHours || 0);
     var rwk = parseFloat(l.ReworkCount || 0);
 
+    var noteText = (l.Note || l.Notes || '').toString().toLowerCase();
+    var isDoneLog = (l.IsDoneJob === true || l.IsDoneJob === 'Yes' || l.IsDoneJob === 'TRUE' ||
+                     noteText.indexOf('done') !== -1 || noteText.indexOf('hoàn thành') !== -1);
+
+    // Nếu ngày đó thành viên Done job và output = 0 thì không đòi hỏi nợ target ngày đó
+    var effectiveTgt = (isDoneLog && out === 0) ? 0 : tgt;
+
     totalOutput += out;
-    totalTarget += tgt;
+    totalTarget += effectiveTgt;
     totalHours += hrs;
     totalRework += rwk;
 
     var mId = l.MemberID;
     if (!memberStats[mId]) {
-      memberStats[mId] = { output: 0, target: 0, days: 0 };
+      memberStats[mId] = { output: 0, target: 0, days: 0, doneDays: 0 };
     }
     memberStats[mId].output += out;
-    memberStats[mId].target += tgt;
+    memberStats[mId].target += effectiveTgt;
     memberStats[mId].days += 1;
+    if (isDoneLog) memberStats[mId].doneDays += 1;
   }
 
   var targetCompletionRate = totalTarget > 0 ? (totalOutput / totalTarget * 100) : 0;
@@ -345,7 +353,8 @@ function buildChartDatasets(logs, fromDateStr, toDateStr, errors) {
       memberStats[mb.MemberID].byDate[dateLabels[di]] = {
         output: 0,
         target: parseFloat(mb.DailyTarget || 20),
-        notes: ''
+        notes: '',
+        isDoneJob: false
       };
     }
   }
@@ -369,11 +378,24 @@ function buildChartDatasets(logs, fromDateStr, toDateStr, errors) {
     }
 
     if (memberStats[mId] && memberStats[mId].byDate[lDate]) {
+      var noteStr = (l.Note || l.Notes || '').toString().trim();
+      var isDone = (l.IsDoneJob === true || l.IsDoneJob === 'Yes' || l.IsDoneJob === 'TRUE' ||
+                    noteStr.toLowerCase().indexOf('done') !== -1 ||
+                    noteStr.toLowerCase().indexOf('hoàn thành') !== -1 ||
+                    noteStr.toLowerCase().indexOf('chốt') !== -1);
+
       var tgt = rawTgt > 0 ? rawTgt : (memberStats[mId].byDate[lDate].target || 20);
+      if (isDone && out === 0) {
+        tgt = 0; // Khi done job và không có sản lượng thì target = 0
+      }
+
       memberStats[mId].byDate[lDate].output += out;
       memberStats[mId].byDate[lDate].target = tgt;
-      if (l.Notes) {
-        memberStats[mId].byDate[lDate].notes = (memberStats[mId].byDate[lDate].notes ? (memberStats[mId].byDate[lDate].notes + '; ') : '') + l.Notes;
+      if (noteStr) {
+        memberStats[mId].byDate[lDate].notes = (memberStats[mId].byDate[lDate].notes ? (memberStats[mId].byDate[lDate].notes + '; ') : '') + noteStr;
+      }
+      if (isDone) {
+        memberStats[mId].byDate[lDate].isDoneJob = true;
       }
     }
   }
@@ -660,13 +682,17 @@ function compileMemberScores(members, logs, errors, fromDateStr, toDateStr, crit
       var h = parseFloat(log.WorkHours || 0);
       var r = parseFloat(log.ReworkCount || 0);
 
+      var logNote = (log.Note || log.Notes || '').toString().toLowerCase();
+      var isDone = (log.IsDoneJob === true || log.IsDoneJob === 'Yes' || logNote.indexOf('done') !== -1 || logNote.indexOf('hoàn thành') !== -1);
+      var effectiveTgt = (isDone && o === 0) ? 0 : t;
+
       mem.output += o;
-      mem.target += t;
+      mem.target += effectiveTgt;
       mem.hours += h;
       mem.rework += r;
       mem.totalDaysWithLogs += 1;
 
-      if (t > 0 && o >= t) {
+      if ((effectiveTgt > 0 && o >= effectiveTgt) || (isDone && o === 0)) {
         mem.dailyTargetMetCount += 1;
       }
     }

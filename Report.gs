@@ -312,10 +312,11 @@ function generateDailyReportDetails(dateStr) {
     // Nhiệm vụ chi tiết (từ nhật ký log nếu có)
     var taskDetail = (mLog && mLog.Note) ? mLog.Note : '';
 
-    // Trạng thái job: 'Complete' hoặc 'Đang rework'
+    // Trạng thái job: 'Done job', 'Complete' hoặc 'Đang rework'
+    var isDoneJob = mLog && (mLog.IsDoneJob === true || /done|hoàn thành|complete|xong/i.test(mLog.Note || ''));
     var jobStatus = 'Đang rework';
-    if (mLog && /hoàn thành|complete|xong/i.test(mLog.Note)) {
-      jobStatus = 'Complete';
+    if (isDoneJob) {
+      jobStatus = 'Done job';
     } else if (out >= tgt && rwk === 0) {
       jobStatus = 'Complete';
     } else if (rwk > 0) {

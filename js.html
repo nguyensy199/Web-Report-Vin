@@ -705,7 +705,20 @@ function renderKpiDailyMatrixTable(kpiComp) {
       var notes = (stat.notes || '').toLowerCase();
 
       var cellHtml = '';
-      if (out > 0) {
+      var isDone = stat.isDoneJob || (notes.indexOf('done') !== -1 || notes.indexOf('hoàn thành') !== -1 || notes.indexOf('chốt') !== -1);
+
+      if (isDone) {
+        if (out > 0) {
+          totalWorkedOutput += out;
+          totalWorkedTarget += out; // Không bị phạt target khi đã done job
+          workedDaysCount++;
+          var formattedOut = formatViNumber(out);
+          cellHtml = '<span class="kpi-day-cell kpi-cell-done" title="Đã Done job (Làm được ' + formattedOut + ' Cuboid)">' + formattedOut + ' (Done)</span>';
+        } else {
+          // out === 0 và Done job: Không tính là ngày nghỉ bị trừ KPI
+          cellHtml = '<span class="kpi-day-cell kpi-cell-done" title="Đã hoàn thành công việc sớm (Done job)">Done job</span>';
+        }
+      } else if (out > 0) {
         totalWorkedOutput += out;
         totalWorkedTarget += tgt;
         workedDaysCount++;
@@ -725,12 +738,7 @@ function renderKpiDailyMatrixTable(kpiComp) {
           cellHtml = '<span class="kpi-day-cell kpi-cell-warning" title="' + dayTitle + '">' + formattedOut + '</span>';
         }
       } else {
-        // out === 0: Kiểm tra ghi chú nếu có 'done job' hoặc 'nghỉ'
-        if (notes.indexOf('done') !== -1 || notes.indexOf('hoàn thành') !== -1 || notes.indexOf('chốt') !== -1) {
-          cellHtml = '<span class="kpi-day-cell kpi-cell-done" title="Hoàn thành công việc sớm">Done job</span>';
-        } else {
-          cellHtml = '<span class="kpi-day-cell kpi-cell-off" title="Nghỉ / Không phát sinh sản lượng">Nghỉ</span>';
-        }
+        cellHtml = '<span class="kpi-day-cell kpi-cell-off" title="Nghỉ / Không phát sinh sản lượng">Nghỉ</span>';
       }
       dayCells.push(cellHtml);
     }
@@ -910,6 +918,36 @@ function renderRecentErrorsTable(errors) {
 // 5. NHẬP SỐ LIỆU HẰNG NGÀY (DAILY LOGS INPUT)
 // ============================================================================
 
+/**
+ * Bật/tắt trạng thái Done job trong ngày
+ */
+function toggleDoneJobStatus() {
+  var doneEl = document.getElementById('inputDoneJob');
+  var isDone = doneEl ? doneEl.checked : false;
+  var badge = document.getElementById('badgeDoneJobPreview');
+  var outInput = document.getElementById('inputOutput');
+  var outLabel = document.getElementById('labelInputOutput');
+  var noteInput = document.getElementById('inputNote');
+
+  if (isDone) {
+    if (badge) badge.style.display = 'inline-block';
+    if (outLabel) outLabel.innerHTML = 'Sản lượng hoàn thành (Tùy chọn khi Done job)';
+    if (outInput && outInput.value === '') {
+      outInput.placeholder = '0 (Hoặc sản lượng đã làm trước khi Done)';
+    }
+    if (noteInput && !noteInput.value.trim()) {
+      noteInput.value = 'Done job';
+    }
+  } else {
+    if (badge) badge.style.display = 'none';
+    if (outLabel) outLabel.innerHTML = 'Sản lượng hoàn thành *';
+    if (outInput) outInput.placeholder = 'Ví dụ: 125';
+    if (noteInput && noteInput.value.trim() === 'Done job') {
+      noteInput.value = '';
+    }
+  }
+}
+
 function submitSingleDailyLog() {
   var memberSelect = document.getElementById('inputMemberSelect');
   var memberId = memberSelect ? memberSelect.value : '';
@@ -919,10 +957,30 @@ function submitSingleDailyLog() {
   var rework = document.getElementById('inputRework').value;
   var target = document.getElementById('inputTarget').value;
   var note = document.getElementById('inputNote').value;
+  var doneJobCheckbox = document.getElementById('inputDoneJob');
+  var isDoneJob = doneJobCheckbox ? doneJobCheckbox.checked : false;
 
-  if (!memberId || !date || output === '') {
-    showToast('Vui lòng chọn thành viên, ngày thực hiện và nhập sản lượng!', 'warning');
+  if (!memberId || !date) {
+    showToast('Vui lòng chọn thành viên và ngày thực hiện!', 'warning');
     return;
+  }
+
+  // Nếu không tích Done job thì bắt buộc nhập sản lượng
+  if (!isDoneJob && output === '') {
+    showToast('Vui lòng nhập sản lượng hoàn thành (hoặc tích chọn Done job)!', 'warning');
+    return;
+  }
+
+  var numOutput = output === '' ? 0 : parseFloat(output);
+  if (isNaN(numOutput)) numOutput = 0;
+
+  var finalNote = note ? note.trim() : '';
+  if (isDoneJob) {
+    if (!finalNote) {
+      finalNote = 'Done job';
+    } else if (finalNote.toLowerCase().indexOf('done') === -1 && finalNote.toLowerCase().indexOf('hoàn thành') === -1) {
+      finalNote = '[Done job] ' + finalNote;
+    }
   }
 
   // Tìm thông tin thành viên từ AppState.members
@@ -940,11 +998,12 @@ function submitSingleDailyLog() {
     ProjectID: projectId,
     ProjectName: projectName,
     Date: date,
-    Output: parseFloat(output),
+    Output: numOutput,
     WorkHours: parseFloat(hours || 8),
     ReworkCount: parseFloat(rework || 0),
-    TargetPerDay: parseFloat(target || 120),
-    Note: note
+    TargetPerDay: isDoneJob && numOutput === 0 ? 0 : parseFloat(target || 120),
+    Note: finalNote,
+    IsDoneJob: isDoneJob
   };
 
   showLoading('Đang lưu số liệu...');
@@ -955,6 +1014,10 @@ function submitSingleDailyLog() {
       document.getElementById('inputOutput').value = '';
       document.getElementById('inputRework').value = '0';
       document.getElementById('inputNote').value = '';
+      if (doneJobCheckbox) {
+        doneJobCheckbox.checked = false;
+        toggleDoneJobStatus();
+      }
       loadAvailableWeeks(); // Đồng bộ tuần mới nếu có
       // Nếu modal lịch sử đang mở thì tự động reload
       var histModal = document.getElementById('dailyLogHistoryModal');
@@ -1102,17 +1165,24 @@ function renderDailyLogsHistoryTable(logs) {
     var safeLogId = String(log.LogID || '').replace(/'/g, "\\'");
     var safeMemberName = String(log.MemberName || log.MemberID || '').replace(/'/g, "\\'");
 
+    var noteLower = note.toLowerCase();
+    var isDoneLog = log.IsDoneJob === true || log.IsDoneJob === 'Yes' || noteLower.indexOf('done') !== -1 || noteLower.indexOf('hoàn thành') !== -1;
+    var outDisplay = (out === 0 && isDoneLog)
+      ? '<span style="color:#c084fc; font-weight:800;">0 (Done job)</span>'
+      : out.toLocaleString('vi-VN');
+    var doneBadge = isDoneLog ? '<span class="badge" style="background:rgba(168,85,247,0.25); color:#c084fc; font-weight:700; font-size:11px; margin-right:4px;">Done job</span> ' : '';
+
     html += '<tr style="transition:background 0.15s;">'
       + '<td style="text-align:center; font-weight:600; color:var(--text-muted);">' + (i + 1) + '</td>'
       + '<td><strong>' + rowDateDisplay + '</strong></td>'
       + '<td><strong style="color:#fff;">' + (log.MemberName || 'Thành viên') + '</strong></td>'
-      + '<td style="text-align:right; font-weight:800; color:var(--primary);">' + out.toLocaleString('vi-VN') + '</td>'
+      + '<td style="text-align:right; font-weight:800; color:var(--primary);">' + outDisplay + '</td>'
       + '<td style="text-align:right; color:var(--text-secondary);">' + tgt.toLocaleString('vi-VN') + '</td>'
-      + '<td style="text-align:center; font-weight:700; ' + compRateColor + '">' + compRate.toFixed(1) + '%</td>'
+      + '<td style="text-align:center; font-weight:700; ' + compRateColor + '">' + (isDoneLog && out === 0 ? '<span style="color:#c084fc;">Done</span>' : compRate.toFixed(1) + '%') + '</td>'
       + '<td style="text-align:center;">' + hrs.toFixed(1) + 'h</td>'
       + '<td style="text-align:center;">' + reworkBadge + '</td>'
       + '<td style="text-align:center; font-weight:700;">' + acc.toFixed(1) + '%</td>'
-      + '<td style="font-size:12px; color:var(--text-secondary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + note.replace(/"/g, '&quot;') + '">' + (note || '--') + '</td>'
+      + '<td style="font-size:12px; color:var(--text-secondary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + note.replace(/"/g, '&quot;') + '">' + doneBadge + (note || '--') + '</td>'
       + '<td style="text-align:center;">'
       + '<button class="btn btn-danger btn-sm" onclick="confirmDeleteDailyLog(\'' + safeLogId + '\', \'' + rowDateDisplay + '\', \'' + safeMemberName + '\', ' + out + ')" title="Xóa bản ghi này nếu người dùng nhập nhầm" style="padding:4px 9px; font-size:11.5px; font-weight:700; border-radius:6px; display:inline-flex; align-items:center; gap:4px;">'
       + '🗑️ Xóa</button>'

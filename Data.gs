@@ -577,11 +577,19 @@ function saveDailyLog(logData) {
     var rework = parseFloat(logData.ReworkCount || 0);
     var target = parseFloat(logData.TargetPerDay || 120);
 
+    var isDoneJob = logData.IsDoneJob === true || logData.isDoneJob === true ||
+                    (logData.Note && String(logData.Note).toLowerCase().indexOf('done') !== -1);
+
+    var noteToSave = logData.Note || '';
+    if (isDoneJob && noteToSave.toLowerCase().indexOf('done') === -1) {
+      noteToSave = '[Done job]' + (noteToSave ? ' ' + noteToSave : '');
+    }
+
     // Productivity: Sản lượng / giờ
     var productivity = hours > 0 ? (output / hours) : 0;
 
-    // Target completion rate
-    var targetComp = target > 0 ? (output / target * 100) : 0;
+    // Target completion rate (Nếu Done job và output = 0 thì không phạt 0%)
+    var targetComp = target > 0 ? (output / target * 100) : (isDoneJob ? 100 : 0);
 
     // Accuracy: Nếu không truyền, mặc định tính theo công thức: (Output - Rework) / Output * 100
     var accuracy = parseFloat(logData.Accuracy);
@@ -608,7 +616,7 @@ function saveDailyLog(logData) {
       parseFloat(accuracy.toFixed(2)),
       parseFloat(productivity.toFixed(2)),
       parseFloat(targetComp.toFixed(2)),
-      logData.Note || '',
+      noteToSave,
       isRowLocked ? 'Yes' : 'No'
     ];
 

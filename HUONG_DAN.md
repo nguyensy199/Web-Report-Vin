@@ -163,3 +163,16 @@ Trên trình soạn thảo Apps Script, bạn tạo 5 file Code (.gs) và 3 file
      - Nhấn **🔄 Khôi Phục Tự Động** để hoàn tác về dữ liệu tự động tính từ Điểm danh, KPI và Lỗi.
      - Nhấn **🖨️ In Báo Cáo** chuẩn định dạng tài liệu.
 
+
+
+9. **Mục Done Job Trong Nhật Ký & Hiển Thị Bảng KPI Theo Ngày Trên Dashboard**:
+   - **Tùy chọn Done Job tiện lợi ở trang Nhập số liệu**:
+     - Tích chọn `🎯 Đã Done Job hôm nay (Hoàn thành sớm / Hết việc)` khi thành viên đã làm hết job trong ngày.
+     - Cho phép ghi nhận ngay cả khi không có sản lượng KPI (`output = 0`) mà không bị báo lỗi thiếu trường bắt buộc.
+     - Có thể nhập sản lượng nếu thành viên đã làm một phần trước khi Done job.
+   - **Hiển thị trực quan trên Dashboard Ngày (Bảng KPI theo ngày)**:
+     - Ô ngày của thành viên sẽ hiển thị nhãn tím nổi bật: `Done job` (hoặc `[Số lượng] (Done)`).
+     - **Không bị trừ % KPI / không kéo tụt điểm trung bình**: Hệ thống thông minh tự nhận biết ngày Done job để không tính nợ target, giúp thành viên giữ vững xếp loại *Xuất sắc* hoặc *Bình thường* mà không bị hiểu lầm là bỏ việc hay trễ tiến độ.
+   - **Đồng bộ Lịch sử & Báo cáo ngày**:
+     - Lịch sử nhập số liệu hiển thị badge tím `Done job` và ghi chú rõ ràng.
+     - Báo cáo ngày tự động chuyển trạng thái job sang `Done job` / `Complete`.
