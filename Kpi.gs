@@ -203,8 +203,8 @@ function calculateMetricsSummary(logs, errors, membersList) {
     var isDoneLog = (l.IsDoneJob === true || l.IsDoneJob === 'Yes' || l.IsDoneJob === 'TRUE' ||
                      noteText.indexOf('done') !== -1 || noteText.indexOf('hoàn thành') !== -1);
 
-    // Nếu ngày đó thành viên Done job và output = 0 thì không đòi hỏi nợ target ngày đó
-    var effectiveTgt = (isDoneLog && out === 0) ? 0 : tgt;
+    // FIX TRIỆT ĐỂ: Nếu ngày đó Done job thì effective target = out (bằng đúng sản lượng làm được, không phạt 120)
+    var effectiveTgt = isDoneLog ? out : tgt;
 
     totalOutput += out;
     totalTarget += effectiveTgt;
@@ -385,8 +385,8 @@ function buildChartDatasets(logs, fromDateStr, toDateStr, errors) {
                     noteStr.toLowerCase().indexOf('chốt') !== -1);
 
       var tgt = rawTgt > 0 ? rawTgt : (memberStats[mId].byDate[lDate].target || 20);
-      if (isDone && out === 0) {
-        tgt = 0; // Khi done job và không có sản lượng thì target = 0
+      if (isDone) {
+        tgt = out; // Khi done job: target khớp sản lượng làm được (100%), không ép 120
       }
 
       memberStats[mId].byDate[lDate].output += out;
@@ -683,8 +683,9 @@ function compileMemberScores(members, logs, errors, fromDateStr, toDateStr, crit
       var r = parseFloat(log.ReworkCount || 0);
 
       var logNote = (log.Note || log.Notes || '').toString().toLowerCase();
-      var isDone = (log.IsDoneJob === true || log.IsDoneJob === 'Yes' || logNote.indexOf('done') !== -1 || logNote.indexOf('hoàn thành') !== -1);
-      var effectiveTgt = (isDone && o === 0) ? 0 : t;
+      var isDone = (log.IsDoneJob === true || log.IsDoneJob === 'Yes' || log.IsDoneJob === 'TRUE' || logNote.indexOf('done') !== -1 || logNote.indexOf('hoàn thành') !== -1);
+      // FIX TRIỆT ĐỂ: Nếu Done job thì chỉ tiêu ngày bằng chính sản lượng làm ra (đạt 100%, không bị nợ 120)
+      var effectiveTgt = isDone ? o : t;
 
       mem.output += o;
       mem.target += effectiveTgt;
@@ -692,7 +693,7 @@ function compileMemberScores(members, logs, errors, fromDateStr, toDateStr, crit
       mem.rework += r;
       mem.totalDaysWithLogs += 1;
 
-      if ((effectiveTgt > 0 && o >= effectiveTgt) || (isDone && o === 0)) {
+      if (isDone || (effectiveTgt > 0 && o >= effectiveTgt)) {
         mem.dailyTargetMetCount += 1;
       }
     }
@@ -717,6 +718,9 @@ function compileMemberScores(members, logs, errors, fromDateStr, toDateStr, crit
     if (memberMap.hasOwnProperty(id)) {
       var item = memberMap[id];
       var targetRate = calcTargetCompletion(item.output, item.target);
+      if (item.target === 0 && item.totalDaysWithLogs > 0) {
+        targetRate = 100;
+      }
       var accuracy = calcAccuracy(item.output, item.rework);
       var productivity = calcProductivity(item.output, item.hours);
       var compScore = calcCompositeScore(targetRate, accuracy, productivity, 15, item.penaltyPoints);

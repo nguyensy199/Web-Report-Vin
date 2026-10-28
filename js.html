@@ -928,12 +928,20 @@ function toggleDoneJobStatus() {
   var outInput = document.getElementById('inputOutput');
   var outLabel = document.getElementById('labelInputOutput');
   var noteInput = document.getElementById('inputNote');
+  var tgtInput = document.getElementById('inputTarget');
 
   if (isDone) {
     if (badge) badge.style.display = 'inline-block';
     if (outLabel) outLabel.innerHTML = 'Sản lượng hoàn thành (Tùy chọn khi Done job)';
     if (outInput && outInput.value === '') {
       outInput.placeholder = '0 (Hoặc sản lượng đã làm trước khi Done)';
+    }
+    if (tgtInput) {
+      tgtInput.dataset.prevTarget = tgtInput.value || '120';
+      tgtInput.value = '0';
+      tgtInput.disabled = true;
+      tgtInput.style.opacity = '0.6';
+      tgtInput.title = 'Đã chọn Done job: Chỉ tiêu ngày sẽ tự khớp theo sản lượng (đạt 100%), không bị tính target 120';
     }
     if (noteInput && !noteInput.value.trim()) {
       noteInput.value = 'Done job';
@@ -942,6 +950,12 @@ function toggleDoneJobStatus() {
     if (badge) badge.style.display = 'none';
     if (outLabel) outLabel.innerHTML = 'Sản lượng hoàn thành *';
     if (outInput) outInput.placeholder = 'Ví dụ: 125';
+    if (tgtInput) {
+      tgtInput.disabled = false;
+      tgtInput.style.opacity = '1';
+      tgtInput.value = tgtInput.dataset.prevTarget || '120';
+      tgtInput.title = '';
+    }
     if (noteInput && noteInput.value.trim() === 'Done job') {
       noteInput.value = '';
     }
@@ -1001,7 +1015,7 @@ function submitSingleDailyLog() {
     Output: numOutput,
     WorkHours: parseFloat(hours || 8),
     ReworkCount: parseFloat(rework || 0),
-    TargetPerDay: isDoneJob && numOutput === 0 ? 0 : parseFloat(target || 120),
+    TargetPerDay: isDoneJob ? (numOutput > 0 ? numOutput : 0) : parseFloat(target || 120),
     Note: finalNote,
     IsDoneJob: isDoneJob
   };
@@ -1147,12 +1161,14 @@ function renderDailyLogsHistoryTable(logs) {
   for (var i = 0; i < logs.length; i++) {
     var log = logs[i];
     var out = parseFloat(log.Output || 0);
-    var tgt = parseFloat(log.TargetPerDay || 120);
+    var note = log.Note || '';
+    var noteLower = note.toLowerCase();
+    var isDoneLog = log.IsDoneJob === true || log.IsDoneJob === 'Yes' || noteLower.indexOf('done') !== -1 || noteLower.indexOf('hoàn thành') !== -1;
+    var tgt = isDoneLog ? out : parseFloat(log.TargetPerDay || 120);
     var hrs = parseFloat(log.WorkHours || 8);
     var rwk = parseFloat(log.ReworkCount || 0);
     var acc = parseFloat(log.Accuracy !== undefined ? log.Accuracy : (out > 0 ? ((out - rwk) / out * 100) : 100));
-    var compRate = parseFloat(log.TargetCompletionRate !== undefined ? log.TargetCompletionRate : (tgt > 0 ? (out / tgt * 100) : 0));
-    var note = log.Note || '';
+    var compRate = isDoneLog ? 100 : parseFloat(log.TargetCompletionRate !== undefined ? log.TargetCompletionRate : (tgt > 0 ? (out / tgt * 100) : 0));
 
     totalOutput += out;
 
@@ -1165,8 +1181,6 @@ function renderDailyLogsHistoryTable(logs) {
     var safeLogId = String(log.LogID || '').replace(/'/g, "\\'");
     var safeMemberName = String(log.MemberName || log.MemberID || '').replace(/'/g, "\\'");
 
-    var noteLower = note.toLowerCase();
-    var isDoneLog = log.IsDoneJob === true || log.IsDoneJob === 'Yes' || noteLower.indexOf('done') !== -1 || noteLower.indexOf('hoàn thành') !== -1;
     var outDisplay = (out === 0 && isDoneLog)
       ? '<span style="color:#c084fc; font-weight:800;">0 (Done job)</span>'
       : out.toLocaleString('vi-VN');

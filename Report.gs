@@ -280,8 +280,16 @@ function generateDailyReportDetails(dateStr) {
     var mb = members[m];
     var mLog = dayLogs.find(function(l) { return l.MemberID === mb.MemberID; });
 
+    var isDoneJob = mLog && (mLog.IsDoneJob === true || mLog.IsDoneJob === 'Yes' || /done|hoàn thành|complete|xong/i.test(mLog.Note || ''));
     var out = mLog ? parseFloat(mLog.Output || 0) : 0;
-    var tgt = mLog ? parseFloat(mLog.TargetPerDay || mb.DailyTarget || 120) : parseFloat(mb.DailyTarget || 120);
+    var tgt = 120;
+    if (isDoneJob) {
+      tgt = out; // Khớp với sản lượng để đạt 100%, không đòi hỏi 120
+    } else if (mLog && mLog.TargetPerDay !== undefined && mLog.TargetPerDay !== null && !isNaN(parseFloat(mLog.TargetPerDay))) {
+      tgt = parseFloat(mLog.TargetPerDay);
+    } else {
+      tgt = parseFloat(mb.DailyTarget || 120);
+    }
     var hrs = mLog ? parseFloat(mLog.WorkHours || 0) : 0;
     var rwk = mLog ? parseFloat(mLog.ReworkCount || 0) : 0;
     var hasLogged = !!mLog;
@@ -291,7 +299,7 @@ function generateDailyReportDetails(dateStr) {
     totalHours += hrs;
     totalRework += rwk;
 
-    var pct = tgt > 0 ? (out / tgt * 100) : 0;
+    var pct = isDoneJob ? 100 : (tgt > 0 ? (out / tgt * 100) : (out > 0 ? 100 : 0));
     var acc = out > 0 ? Math.max(0, (out - rwk) / out * 100) : 100;
     var prod = hrs > 0 ? parseFloat((out / hrs).toFixed(1)) : 0;
 
@@ -355,8 +363,12 @@ function generateDailyReportDetails(dateStr) {
   // 2. Số liệu hôm trước để so sánh
   var prevOutput = 0, prevTarget = 0, prevRework = 0;
   for (var p = 0; p < prevLogs.length; p++) {
-    prevOutput += parseFloat(prevLogs[p].Output || 0);
-    prevTarget += parseFloat(prevLogs[p].TargetPerDay || 0);
+    var pOut = parseFloat(prevLogs[p].Output || 0);
+    var pNote = (prevLogs[p].Note || '').toLowerCase();
+    var pIsDone = prevLogs[p].IsDoneJob === true || prevLogs[p].IsDoneJob === 'Yes' || /done|hoàn thành|xong/i.test(pNote);
+    var pTgt = pIsDone ? pOut : parseFloat(prevLogs[p].TargetPerDay || 0);
+    prevOutput += pOut;
+    prevTarget += pTgt;
     prevRework += parseFloat(prevLogs[p].ReworkCount || 0);
   }
 
@@ -513,8 +525,15 @@ function generateWeeklyReportDetails(weekDateOrStr) {
     var dLogs = weekLogs.filter(function(l) { return l.Date === dStr; });
     var dOut = 0, dTgt = 0, dRwk = 0;
     for (var k = 0; k < dLogs.length; k++) {
-      dOut += parseFloat(dLogs[k].Output || 0);
-      dTgt += parseFloat(dLogs[k].TargetPerDay || 0);
+      var dNote = (dLogs[k].Note || '').toLowerCase();
+      var dIsDone = dLogs[k].IsDoneJob === true || dLogs[k].IsDoneJob === 'Yes' || /done|hoàn thành|xong/i.test(dNote);
+      var itemOut = parseFloat(dLogs[k].Output || 0);
+      var itemTgt = parseFloat(dLogs[k].TargetPerDay || 0);
+      if (dIsDone) {
+        itemTgt = itemOut; // Không ép target 120 khi Done job
+      }
+      dOut += itemOut;
+      dTgt += itemTgt;
       dRwk += parseFloat(dLogs[k].ReworkCount || 0);
     }
     var dAcc = dOut > 0 ? Math.max(0, (dOut - dRwk) / dOut * 100) : 100;
@@ -589,9 +608,16 @@ function generateWeeklyReportDetails(weekDateOrStr) {
     var defaultDailyTarget = mbInfo ? parseFloat(mbInfo.DailyTarget || 20) : 20;
 
     for (var ml = 0; ml < mLogs.length; ml++) {
+      var mNote = (mLogs[ml].Note || '').toLowerCase();
+      var mIsDone = mLogs[ml].IsDoneJob === true || mLogs[ml].IsDoneJob === 'Yes' || /done|hoàn thành|xong/i.test(mNote);
       var logOut = parseFloat(mLogs[ml].Output || 0);
       var logTgt = parseFloat(mLogs[ml].TargetPerDay || 0);
-      if (logTgt <= 0) logTgt = defaultDailyTarget;
+
+      if (mIsDone) {
+        logTgt = logOut; // Nếu Done job, chỉ tiêu khớp sản lượng (100%), không phạt 120
+      } else if (logTgt <= 0) {
+        logTgt = defaultDailyTarget;
+      }
       var logHrs = parseFloat(mLogs[ml].WorkHours || 0);
       var logRwk = parseFloat(mLogs[ml].ReworkCount || 0);
 
@@ -605,7 +631,9 @@ function generateWeeklyReportDetails(weekDateOrStr) {
     rMem.target = sumTgt;
     rMem.hours = sumHrs;
     rMem.rework = sumRwk;
-    rMem.targetCompletionRate = sumTgt > 0 ? parseFloat((sumOut / sumTgt * 100).toFixed(1)) : 0;
+    rMem.targetCompletionRate = sumTgt > 0 
+      ? parseFloat((sumOut / sumTgt * 100).toFixed(1)) 
+      : (sumOut > 0 || mLogs.some(function(l){ return l.IsDoneJob === true || /done|hoàn thành/i.test(l.Note||''); }) ? 100 : 0);
     rMem.productivity = sumHrs > 0 ? parseFloat((sumOut / sumHrs).toFixed(1)) : 0;
 
     var pCount = attStat ? attStat.present : 0;

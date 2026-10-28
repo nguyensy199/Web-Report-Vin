@@ -575,10 +575,18 @@ function saveDailyLog(logData) {
     var output = parseFloat(logData.Output || 0);
     var hours = parseFloat(logData.WorkHours || 8);
     var rework = parseFloat(logData.ReworkCount || 0);
-    var target = parseFloat(logData.TargetPerDay || 120);
 
     var isDoneJob = logData.IsDoneJob === true || logData.isDoneJob === true ||
-                    (logData.Note && String(logData.Note).toLowerCase().indexOf('done') !== -1);
+                    (logData.Note && String(logData.Note).toLowerCase().indexOf('done') !== -1) ||
+                    (logData.Note && String(logData.Note).toLowerCase().indexOf('hoàn thành') !== -1);
+
+    var rawTarget = parseFloat(logData.TargetPerDay);
+    var target = 120;
+    if (isDoneJob) {
+      target = output > 0 ? output : 0;
+    } else if (!isNaN(rawTarget) && rawTarget > 0) {
+      target = rawTarget;
+    }
 
     var noteToSave = logData.Note || '';
     if (isDoneJob && noteToSave.toLowerCase().indexOf('done') === -1) {
@@ -588,8 +596,8 @@ function saveDailyLog(logData) {
     // Productivity: Sản lượng / giờ
     var productivity = hours > 0 ? (output / hours) : 0;
 
-    // Target completion rate (Nếu Done job và output = 0 thì không phạt 0%)
-    var targetComp = target > 0 ? (output / target * 100) : (isDoneJob ? 100 : 0);
+    // Target completion rate (Nếu Done job thì luôn 100%, không bao giờ bị trừ % KPI)
+    var targetComp = isDoneJob ? 100 : (target > 0 ? (output / target * 100) : (output > 0 ? 100 : 0));
 
     // Accuracy: Nếu không truyền, mặc định tính theo công thức: (Output - Rework) / Output * 100
     var accuracy = parseFloat(logData.Accuracy);
@@ -1343,8 +1351,13 @@ function getAttitudeEvaluation(weekFromDate) {
     var accuracyCount = 0;
 
     for (var l = 0; l < mLogs.length; l++) {
-      totalOutput += parseFloat(mLogs[l].Output || 0);
-      totalTarget += parseFloat(mLogs[l].TargetPerDay || mb.DailyTarget || 120);
+      var logOut = parseFloat(mLogs[l].Output || 0);
+      var logNote = (mLogs[l].Note || '').toLowerCase();
+      var isDoneLog = mLogs[l].IsDoneJob === true || mLogs[l].IsDoneJob === 'Yes' || /done|hoàn thành/i.test(logNote);
+      var logTgt = isDoneLog ? logOut : parseFloat(mLogs[l].TargetPerDay || mb.DailyTarget || 120);
+
+      totalOutput += logOut;
+      totalTarget += logTgt;
       totalHours += parseFloat(mLogs[l].Hours || 8);
       if (mLogs[l].Accuracy !== undefined && mLogs[l].Accuracy !== null && mLogs[l].Accuracy !== '') {
         accuracySum += parseFloat(mLogs[l].Accuracy);
